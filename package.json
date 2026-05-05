@@ -1,0 +1,15 @@
+{
+  "name": "look-project-root",
+  "version": "1.0.0",
+  "scripts": {
+    "setup": "npm install --prefix backend && npm install --prefix frontend && npm run db:push && npm run db:seed",
+    "db:push": "npm run db:push --prefix backend",
+    "db:seed": "npm run db:seed --prefix backend",
+    "dev": "concurrently -n \"API,WEB\" -c \"magenta,cyan\" \"npm run start:dev --prefix backend\" \"npm run dev --prefix frontend\"",
+    "start": "docker-compose up --build",
+    "stop": "docker-compose down"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
