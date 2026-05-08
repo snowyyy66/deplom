@@ -6,11 +6,10 @@ import {
   Users, TrendingUp, Package, ChevronRight, Check
 } from 'lucide-react';
 import { toast } from 'sonner';
-
-const ADMIN_KEY = 'look-admin-2024';
+import { getAdminToken } from '../lib/api';
 
 const adminFetch = (url, options = {}) =>
-  fetch(url, { ...options, headers: { 'Content-Type': 'application/json', 'x-admin-key': ADMIN_KEY, ...(options.headers || {}) } });
+  fetch(url, { ...options, headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getAdminToken()}`, ...(options.headers || {}) } });
 
 const statusLabels = {
   pending: 'Ожидает', confirmed: 'Подтверждён', cancelled: 'Отменён',

@@ -86,10 +86,10 @@ export function AuthPage({ onAuth }) {
 
     try {
       if (mode === 'login') {
-        const user = await api.login(formData.email, formData.password);
+        const { user } = await api.login(formData.email, formData.password);
         onAuth({ id: user.id, name: user.name, email: user.email, phone: user.phone, has_found_easter_egg: user.has_found_easter_egg });
       } else {
-        const user = await api.register(formData.name, formData.email, formData.phone, formData.password);
+        const { user } = await api.register(formData.name, formData.email, formData.phone, formData.password);
         onAuth({ id: user.id, name: user.name, email: user.email, phone: user.phone, has_found_easter_egg: user.has_found_easter_egg });
       }
     } catch (err) {

@@ -11,6 +11,7 @@ import { IsEmail, IsNotEmpty, IsOptional, IsString, MaxLength, MinLength } from 
 import { PrismaService } from '../../prisma/prisma.service';
 import bcrypt from 'bcryptjs';
 import nodemailer from 'nodemailer';
+import { signToken } from '../../common/jwt.utils.js';
 
 class RegisterDto {
   @IsString({ message: 'Имя должно быть строкой' })
@@ -82,7 +83,7 @@ export class AuthController {
       },
     });
 
-    return this.toUserResponse(user);
+    return { user: this.toUserResponse(user), token: signToken({ sub: user.id }) };
   }
 
   @Post('login')
@@ -93,7 +94,7 @@ export class AuthController {
     const ok = await bcrypt.compare(body.password, user.passwordHash);
     if (!ok) throw new BadRequestException('Неверный email или пароль');
 
-    return this.toUserResponse(user);
+    return { user: this.toUserResponse(user), token: signToken({ sub: user.id }) };
   }
 
   @Post('forgot-password')

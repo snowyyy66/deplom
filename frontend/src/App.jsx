@@ -8,15 +8,16 @@ import { AboutPage } from './pages/AboutPage';
 import { ContactsPage } from './pages/ContactsPage';
 import { AdminPage } from './pages/AdminPage';
 import { AdminLoginPage } from './pages/AdminLoginPage';
+import { getAdminToken, setAdminToken } from './lib/api';
 
 function App() {
   const [currentPage, setCurrentPage] = useState('auth');
-  const [isAdminAuthed, setIsAdminAuthed] = useState(() => sessionStorage.getItem('look_admin') === '1');
+  const [isAdminAuthed, setIsAdminAuthed] = useState(() => !!getAdminToken());
 
   // /admin route detection
   if (window.location.pathname === '/admin') {
-    if (!isAdminAuthed) return <AdminLoginPage onLogin={() => { sessionStorage.setItem('look_admin', '1'); setIsAdminAuthed(true); }} />;
-    return <AdminPage onLogout={() => { sessionStorage.removeItem('look_admin'); setIsAdminAuthed(false); window.location.pathname = '/'; }} />;
+    if (!isAdminAuthed) return <AdminLoginPage onLogin={() => { setIsAdminAuthed(true); }} />;
+    return <AdminPage onLogout={() => { setAdminToken(null); setIsAdminAuthed(false); window.location.pathname = '/'; }} />;
   }
   const [initialOrderType, setInitialOrderType] = useState(null);
   const [initialPromoCode, setInitialPromoCode] = useState('');

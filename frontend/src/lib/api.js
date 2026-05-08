@@ -7,6 +7,21 @@ function getApiBase() {
 
 const BASE_URL = getApiBase();
 
+// --- Token storage ---
+
+const USER_TOKEN_KEY = 'look_user_token';
+const ADMIN_TOKEN_KEY = 'look_admin_token';
+
+export const getToken = () => localStorage.getItem(USER_TOKEN_KEY);
+export const setToken = (token) =>
+  token ? localStorage.setItem(USER_TOKEN_KEY, token) : localStorage.removeItem(USER_TOKEN_KEY);
+
+export const getAdminToken = () => sessionStorage.getItem(ADMIN_TOKEN_KEY);
+export const setAdminToken = (token) =>
+  token ? sessionStorage.setItem(ADMIN_TOKEN_KEY, token) : sessionStorage.removeItem(ADMIN_TOKEN_KEY);
+
+// ---
+
 const fetchWithTimeout = async (url, options = {}, timeout = 10000) => {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeout);
@@ -59,7 +74,9 @@ export const api = {
       const error = await response.json().catch(() => ({}));
       throw new Error(error.detail || 'Ошибка входа');
     }
-    return response.json();
+    const data = await response.json();
+    setToken(data.token);
+    return data; // { user, token }
   },
 
   register: async (name, email, phone, password) => {
@@ -72,7 +89,23 @@ export const api = {
       const error = await response.json().catch(() => ({}));
       throw new Error(error.detail || 'Ошибка регистрации');
     }
-    return response.json();
+    const data = await response.json();
+    setToken(data.token);
+    return data; // { user, token }
+  },
+
+  adminLogin: async (password) => {
+    const response = await fetchWithTimeout(`${BASE_URL}/admin/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password }),
+    }, 8000);
+    if (!response.ok) {
+      throw new Error('Неверный пароль');
+    }
+    const data = await response.json();
+    setAdminToken(data.token);
+    return data; // { token }
   },
 
   createReservation: async (data) => {
