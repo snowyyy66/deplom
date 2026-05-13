@@ -36,11 +36,11 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8000/api/menu > /dev/null 2>&1 || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8000/api/menu > /dev/null 2>&1 || exit 1"]
       interval: 10s
       timeout: 5s
-      retries: 12
-      start_period: 40s
+      retries: 15
+      start_period: 120s
     networks:
       - look_network
 
@@ -53,7 +53,7 @@ services:
     ports:
       - "5173:5173"
     environment:
-      - VITE_API_URL=http://api:8000
+      - VITE_API_URL=http://localhost:8000
     depends_on:
       api:
         condition: service_healthy

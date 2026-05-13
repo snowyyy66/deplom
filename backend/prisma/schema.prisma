@@ -13,6 +13,7 @@ model User {
   email               String   @unique
   phone               String
   passwordHash       String   @map("password_hash")
+  role               String   @default("user")
   hasFoundEasterEgg  Int      @default(0) @map("has_found_easter_egg")
   runnerPromoEligible Int     @default(0) @map("runner_promo_eligible")
   createdAt           DateTime @default(now()) @map("created_at")
