@@ -26,7 +26,7 @@ function lookBannerPlugin() {
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
-  const apiTarget = env.VITE_API_URL || 'http://127.0.0.1:8000';
+  const apiTarget = env.API_TARGET || env.VITE_API_URL || 'http://127.0.0.1:8000';
 
   return {
     base: '/',
