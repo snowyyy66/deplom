@@ -6,21 +6,27 @@ import {
   Delete,
   Body,
   Param,
-  Headers,
   ForbiddenException,
   ParseIntPipe,
   Header,
   Inject,
+  UseGuards,
 } from '@nestjs/common';
 import { AdminService } from './admin.service';
-import { signToken, verifyToken } from '../../common/jwt.utils.js';
+import { signToken } from '../../common/jwt.utils.js';
+import { AdminGuard } from '../../common/admin.guard.js';
+import { Public } from '../../common/public.decorator.js';
+import { Throttle } from '@nestjs/throttler';
 
 @Controller('api/admin')
+@UseGuards(AdminGuard)
 export class AdminController {
   constructor(@Inject(AdminService) adminService) {
     this.adminService = adminService;
   }
 
+  @Public()
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('login')
   async adminLogin(@Body() body) {
     const adminPassword = process.env.ADMIN_PASSWORD;
@@ -30,109 +36,85 @@ export class AdminController {
     return { token: signToken({ role: 'admin' }, '8h') };
   }
 
-  checkAdminToken(headers) {
-    const authHeader = headers['authorization'];
-    if (!authHeader?.startsWith('Bearer ')) throw new ForbiddenException('Admin token required');
-    try {
-      const payload = verifyToken(authHeader.slice(7));
-      if (payload.role !== 'admin') throw new Error();
-    } catch {
-      throw new ForbiddenException('Invalid admin token');
-    }
-  }
-
   @Get('menu/export-csv')
   @Header('Content-Type', 'text/csv')
   @Header('Content-Disposition', 'attachment; filename="menu.csv"')
-  async exportMenuCsv(@Headers() headers) {
-    this.checkAdminToken(headers);
+  async exportMenuCsv() {
     return this.adminService.exportMenuCsv();
   }
 
   @Get('menu')
-  async getMenu(@Headers() headers) {
-    this.checkAdminToken(headers);
+  async getMenu() {
     return this.adminService.getAllMenuItems();
   }
 
   @Post('menu')
-  async createMenuItem(
-    @Headers() headers,
-    @Body() body,
-  ) {
-    this.checkAdminToken(headers);
+  async createMenuItem(@Body() body) {
     return this.adminService.createMenuItem(body);
   }
 
   @Patch('menu/:id')
-  async updateMenuItem(
-    @Headers() headers,
-    @Param('id', ParseIntPipe) id,
-    @Body() body,
-  ) {
-    this.checkAdminToken(headers);
+  async updateMenuItem(@Param('id', ParseIntPipe) id, @Body() body) {
     return this.adminService.updateMenuItem(id, body);
   }
 
   @Delete('menu/:id')
-  async deleteMenuItem(
-    @Headers() headers,
-    @Param('id', ParseIntPipe) id,
-  ) {
-    this.checkAdminToken(headers);
+  async deleteMenuItem(@Param('id', ParseIntPipe) id) {
     return this.adminService.deleteMenuItem(id);
   }
 
   @Get('orders')
-  async getOrders(@Headers() headers) {
-    this.checkAdminToken(headers);
+  async getOrders() {
     return this.adminService.getAllOrders();
   }
 
   @Patch('orders/:id/status')
-  async updateOrderStatus(
-    @Headers() headers,
-    @Param('id', ParseIntPipe) id,
-    @Body() body,
-  ) {
-    this.checkAdminToken(headers);
+  async updateOrderStatus(@Param('id', ParseIntPipe) id, @Body() body) {
     return this.adminService.updateOrderStatus(id, body.status);
   }
 
   @Get('reservations')
-  async getReservations(@Headers() headers) {
-    this.checkAdminToken(headers);
+  async getReservations() {
     return this.adminService.getAllReservations();
   }
 
   @Patch('reservations/:id/status')
-  async updateReservationStatus(
-    @Headers() headers,
-    @Param('id', ParseIntPipe) id,
-    @Body() body,
-  ) {
-    this.checkAdminToken(headers);
+  async updateReservationStatus(@Param('id', ParseIntPipe) id, @Body() body) {
     return this.adminService.updateReservationStatus(id, body.status);
   }
 
   @Get('reviews')
-  async getReviews(@Headers() headers) {
-    this.checkAdminToken(headers);
+  async getReviews() {
     return this.adminService.getAllReviews();
   }
 
   @Delete('reviews/:id')
-  async deleteReview(
-    @Headers() headers,
-    @Param('id', ParseIntPipe) id,
-  ) {
-    this.checkAdminToken(headers);
+  async deleteReview(@Param('id', ParseIntPipe) id) {
     return this.adminService.deleteReview(id);
   }
 
   @Get('messages')
-  async getMessages(@Headers() headers) {
-    this.checkAdminToken(headers);
+  async getMessages() {
     return this.adminService.getAllMessages();
+  }
+
+  @Get('promos')
+  async getPromos() {
+    return this.adminService.getAllPromoCodes();
+  }
+
+  @Post('promos')
+  async createPromo(@Body() body) {
+    return this.adminService.createPromoCode(body);
+  }
+
+  @Patch('promos/:id')
+  async updatePromo(@Param('id', ParseIntPipe) id, @Body() body) {
+    return this.adminService.updatePromoCode(id, body);
+  }
+
+  @Delete('promos/:id')
+  async deletePromo(@Param('id', ParseIntPipe) id) {
+    return this.adminService.deletePromoCode(id);
   }
 }

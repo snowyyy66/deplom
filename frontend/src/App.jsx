@@ -10,22 +10,24 @@ import { AdminPage } from './pages/AdminPage';
 import { AdminLoginPage } from './pages/AdminLoginPage';
 import { getAdminToken, setAdminToken } from './lib/api';
 
+function getSavedUser() {
+  try {
+    const saved = localStorage.getItem('look_restaurant_user');
+    return saved ? JSON.parse(saved) : { name: 'Гость', email: '', phone: '' };
+  } catch {
+    return { name: 'Гость', email: '', phone: '' };
+  }
+}
+
+const isAdminRoute = window.location.pathname === '/admin';
+
 function App() {
   const [currentPage, setCurrentPage] = useState('auth');
   const [isAdminAuthed, setIsAdminAuthed] = useState(() => !!getAdminToken());
-
-  // /admin route detection
-  if (window.location.pathname === '/admin') {
-    if (!isAdminAuthed) return <AdminLoginPage onLogin={() => { setIsAdminAuthed(true); }} />;
-    return <AdminPage onLogout={() => { setAdminToken(null); setIsAdminAuthed(false); window.location.pathname = '/'; }} />;
-  }
   const [initialOrderType, setInitialOrderType] = useState(null);
   const [initialPromoCode, setInitialPromoCode] = useState('');
   const [cart, setCart] = useState([]);
-  const [userData, setUserData] = useState(() => {
-    const saved = localStorage.getItem('look_restaurant_user');
-    return saved ? JSON.parse(saved) : { name: 'Гость', email: '', phone: '' };
-  });
+  const [userData, setUserData] = useState(getSavedUser);
 
   useEffect(() => {
     if (userData.email) {
@@ -36,22 +38,22 @@ function App() {
     }
   }, [userData]);
 
+  if (isAdminRoute) {
+    if (!isAdminAuthed) return <AdminLoginPage onLogin={() => setIsAdminAuthed(true)} />;
+    return <AdminPage onLogout={() => { setAdminToken(null); setIsAdminAuthed(false); window.location.pathname = '/'; }} />;
+  }
+
   const handleAuth = (data) => {
     setUserData(data);
-    setCart([]); // Clear cart only on fresh login
+    setCart([]);
     setCurrentPage('home');
   };
 
-  const handleUpdateUser = (data) => {
-    setUserData(data);
-  };
-
   const navigateTo = (page, orderType, promoCode) => {
-    if (orderType) setInitialOrderType(orderType);
-    else setInitialOrderType(null);
-    if (promoCode) setInitialPromoCode(promoCode);
-    else setInitialPromoCode('');
+    setInitialOrderType(orderType ?? null);
+    setInitialPromoCode(promoCode ?? '');
     setCurrentPage(page);
+    window.scrollTo(0, 0);
   };
 
   const addToCart = (itemId) => {
@@ -66,7 +68,7 @@ function App() {
   const removeFromCart = (itemId) => {
     setCart(prev => {
       const existing = prev.find(i => i.id === itemId);
-      if (existing && existing.quantity > 1) {
+      if (existing?.quantity > 1) {
         return prev.map(i => i.id === itemId ? { ...i, quantity: i.quantity - 1 } : i);
       }
       return prev.filter(i => i.id !== itemId);
@@ -107,7 +109,7 @@ function App() {
         <ProfilePage
           onNavigate={navigateTo}
           userData={userData}
-          onUpdateUser={handleUpdateUser}
+          onUpdateUser={setUserData}
         />
       )}
       {currentPage === 'about' && (

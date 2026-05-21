@@ -5,10 +5,9 @@ import {
   MessageSquare, Send, Quote,
   UtensilsCrossed, Phone
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { api } from '../lib/api';
 import { motion, useScroll, useTransform, AnimatePresence, useInView } from 'framer-motion';
-import { useRef } from 'react';
 
 // Компонент reveal-анимации текста (строка едет снизу, как на avetool.cc)
 function Reveal({ children, delay = 0, className = '' }) {
@@ -30,9 +29,8 @@ function Reveal({ children, delay = 0, className = '' }) {
 import { toast } from 'sonner';
 
 export function HomePage({ onNavigate, userData, cart, addToCart, removeFromCart }) {
-  const [scrollY, setScrollY] = useState(0);
   const [activeCategory, setActiveCategory] = useState('all');
-  const [priceSort, setPriceSort] = useState(null); // 'asc' | 'desc' | null
+  const [priceSort, setPriceSort] = useState(null);
   const [dishes, setDishes] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -42,8 +40,11 @@ export function HomePage({ onNavigate, userData, cart, addToCart, removeFromCart
   const [newReviewRating, setNewReviewRating] = useState(5);
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
 
-  const { scrollYProgress } = useScroll();
+  const { scrollY, scrollYProgress } = useScroll();
   const heroOpacity = useTransform(scrollYProgress, [0, 0.25], [1, 0]);
+  const [navScrolled, setNavScrolled] = useState(false);
+
+  const cartTotal = useMemo(() => cart.reduce((a, c) => a + c.quantity, 0), [cart]);
 
   const handleSubmitReview = async (e) => {
     e.preventDefault();
@@ -60,29 +61,25 @@ export function HomePage({ onNavigate, userData, cart, addToCart, removeFromCart
   };
 
   useEffect(() => {
-    const handleScroll = () => setScrollY(window.scrollY);
-    window.addEventListener('scroll', handleScroll);
-
+    const unsubscribe = scrollY.on('change', v => setNavScrolled(v > 50));
     Promise.all([
       api.getMenu().then(data => setDishes(data)),
       api.getReviews().then(data => setReviews(data))
     ]).then(() => setLoading(false)).catch(console.error);
-
-    return () => window.removeEventListener('scroll', handleScroll);
+    return unsubscribe;
   }, []);
 
-  const menuCategories = [
+  const menuCategories = useMemo(() => [
     { id: 'all', name: 'Все', count: dishes.length },
     ...Array.from(new Set(dishes.map(d => d.category))).map(cat => ({
-      id: cat,
-      name: cat,
-      count: dishes.filter(d => d.category === cat).length
+      id: cat, name: cat, count: dishes.filter(d => d.category === cat).length
     }))
-  ];
+  ], [dishes]);
 
-  const filteredDishes = dishes
+  const filteredDishes = useMemo(() => dishes
     .filter(dish => activeCategory === 'all' || dish.category === activeCategory)
-    .sort((a, b) => priceSort === 'asc' ? a.price - b.price : priceSort === 'desc' ? b.price - a.price : 0);
+    .sort((a, b) => priceSort === 'asc' ? a.price - b.price : priceSort === 'desc' ? b.price - a.price : 0),
+  [dishes, activeCategory, priceSort]);
 
   if (loading) {
     return (
@@ -109,12 +106,11 @@ export function HomePage({ onNavigate, userData, cart, addToCart, removeFromCart
         initial={{ y: -100 }}
         animate={{ y: 0 }}
         transition={{ duration: 0.8, ease: "easeOut" }}
-        className={`fixed top-0 left-0 right-0 z-50 transition-all duration-500 ${scrollY > 50 ? 'glassmorphism-dark border-b border-white/5 py-2' : 'bg-transparent py-4'}`}
+        className={`fixed top-0 left-0 right-0 z-50 transition-all duration-500 ${navScrolled ? 'glassmorphism-dark border-b border-white/5 py-2' : 'bg-transparent py-4'}`}
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-20">
             <motion.button
-              whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={() => onNavigate('home')}
               className="relative group flex items-center"
@@ -122,7 +118,7 @@ export function HomePage({ onNavigate, userData, cart, addToCart, removeFromCart
               <img
                 src="/logo.png"
                 alt="Look"
-                className="w-32 h-32 object-contain invert drop-shadow-[0_0_18px_rgba(251,191,36,0.7)] group-hover:drop-shadow-[0_0_30px_rgba(251,191,36,1)] transition-all duration-300"
+                className="w-32 h-32 object-contain invert drop-shadow-[0_0_18px_rgba(251,191,36,0.7)] group-hover:drop-shadow-[0_0_32px_rgba(251,191,36,1)] transition-[filter] duration-300"
               />
             </motion.button>
 
@@ -165,12 +161,12 @@ export function HomePage({ onNavigate, userData, cart, addToCart, removeFromCart
               >
                 <ShoppingBag size={22} />
                 <AnimatePresence>
-                  {cart.reduce((a,c) => a+c.quantity, 0) > 0 && (
+                  {cartTotal > 0 && (
                     <motion.span
                       initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }}
                       className="absolute top-0 right-0 w-4 h-4 rounded-full bg-orange-600 text-white text-[10px] flex items-center justify-center font-black"
                     >
-                      {cart.reduce((a,c) => a+c.quantity, 0)}
+                      {cartTotal}
                     </motion.span>
                   )}
                 </AnimatePresence>
@@ -313,9 +309,9 @@ export function HomePage({ onNavigate, userData, cart, addToCart, removeFromCart
             {filteredDishes.map((dish, index) => (
               <motion.div
                 key={`${dish.id}-${activeCategory}-${priceSort}`}
-                initial={{ opacity: 0, scale: 0.92, filter: 'blur(8px)' }}
-                animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
-                transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1], delay: index * 0.04 }}
+                initial={{ opacity: 0, scale: 0.94 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1], delay: Math.min(index * 0.04, 0.3) }}
                 className="group relative glassmorphism-dark rounded-2xl overflow-hidden hover:border-amber-500/50 transition-colors duration-500 flex flex-row sm:flex-col"
               >
                 <div className="relative w-32 sm:w-full h-32 sm:h-52 shrink-0 overflow-hidden">
@@ -437,7 +433,7 @@ export function HomePage({ onNavigate, userData, cart, addToCart, removeFromCart
                   ) : (
                     reviews.map((rev, i) => (
                       <motion.div
-                        initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.1 }}
+                        initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: Math.min(i * 0.08, 0.4) }}
                         key={rev.id}
                         className="glassmorphism p-6 rounded-[2rem] border border-white/5 relative group hover:border-amber-500/30 transition-colors"
                       >
@@ -495,20 +491,6 @@ export function HomePage({ onNavigate, userData, cart, addToCart, removeFromCart
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="py-16 px-4 pb-28 md:pb-16 border-t border-white/5 relative z-10 bg-black/50 backdrop-blur-3xl">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-8">
-          <img src="/logo.png" alt="Look" className="w-32 object-contain invert opacity-40 hover:opacity-80 hover:drop-shadow-[0_0_20px_rgba(251,191,36,0.6)] transition-all duration-300" />
-          <div className="flex items-center gap-8">
-            <div className="flex gap-6 text-gray-500">
-              <a href="#" className="hover:text-amber-500 transition-colors">Instagram</a>
-              <a href="#" className="hover:text-amber-500 transition-colors">Telegram</a>
-            </div>
-            <div className="w-px h-8 bg-white/10" />
-            <p className="text-gray-600 text-sm">© 2024 Look Restaurant.</p>
-          </div>
-        </div>
-      </footer>
 
       {/* Мобильная нижняя навигация */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 border-t border-white/5" style={{background:'rgba(10,10,10,0.92)',backdropFilter:'blur(20px)'}}>
@@ -516,7 +498,7 @@ export function HomePage({ onNavigate, userData, cart, addToCart, removeFromCart
           {[
             { icon: UtensilsCrossed, label: 'Меню', action: () => document.getElementById('menu')?.scrollIntoView({ behavior: 'smooth' }) },
             { icon: Calendar, label: 'Бронь', action: () => onNavigate('order', 'reservation') },
-            { icon: ShoppingBag, label: 'Доставка', action: () => onNavigate('order', 'delivery'), badge: cart.reduce((a,c)=>a+c.quantity,0) },
+            { icon: ShoppingBag, label: 'Доставка', action: () => onNavigate('order', 'delivery'), badge: cartTotal },
             { icon: User, label: 'О нас', action: () => onNavigate('about') },
             { icon: Phone, label: 'Контакты', action: () => onNavigate('contacts') },
           ].map(({ icon: Icon, label, action, badge }) => (

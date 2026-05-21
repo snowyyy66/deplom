@@ -3,6 +3,7 @@ import {
   Body,
   ConflictException,
   Controller,
+  ForbiddenException,
   Get,
   Inject,
   NotFoundException,
@@ -11,6 +12,8 @@ import {
   Patch,
   Post,
   Query,
+  Req,
+  UseGuards,
 } from '@nestjs/common';
 import {
   IsDateString,
@@ -23,6 +26,8 @@ import {
 } from 'class-validator';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MAX_TABLES } from '../../config/constants';
+import { Public } from '../../common/public.decorator.js';
+import { AdminGuard } from '../../common/admin.guard.js';
 
 class CreateReservationDto {
   @IsInt({ message: 'Некорректный ID пользователя' })
@@ -92,6 +97,7 @@ export class ReservationsController {
     this.prisma = prisma;
   }
 
+  @Public()
   @Get('reservations/availability')
   async availability(@Query('date') date, @Query('time') time) {
     const { start, end } = dayRange(date);
@@ -109,9 +115,11 @@ export class ReservationsController {
     };
   }
 
+  @Public()
   @Post('reservations')
-  async create(@Body() body) {
+  async create(@Body() body, @Req() req) {
     const { start, end } = dayRange(body.date);
+    const authedUserId = req.user?.sub ?? null;
 
     if (body.table_number !== undefined && body.table_number !== null) {
       const exists = await this.prisma.reservation.findFirst({
@@ -137,7 +145,7 @@ export class ReservationsController {
 
     const created = await this.prisma.reservation.create({
       data: {
-        userId: body.user_id ?? null,
+        userId: authedUserId,
         name: body.name,
         phone: body.phone,
         date: start,
@@ -151,6 +159,7 @@ export class ReservationsController {
     return toReservationResponse(created);
   }
 
+  @UseGuards(AdminGuard)
   @Get('reservations')
   async list() {
     const rows = await this.prisma.reservation.findMany({ orderBy: { createdAt: 'desc' } });
@@ -158,7 +167,8 @@ export class ReservationsController {
   }
 
   @Get('reservations/user/:user_id')
-  async getUserReservations(@Param('user_id', ParseIntPipe) userId) {
+  async getUserReservations(@Param('user_id', ParseIntPipe) userId, @Req() req) {
+    if (req.user?.sub !== userId) throw new ForbiddenException('Доступ запрещён');
     const rows = await this.prisma.reservation.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },
@@ -167,9 +177,10 @@ export class ReservationsController {
   }
 
   @Patch('reservations/:reservation_id/cancel')
-  async cancel(@Param('reservation_id', ParseIntPipe) id) {
+  async cancel(@Param('reservation_id', ParseIntPipe) id, @Req() req) {
     const reservation = await this.prisma.reservation.findFirst({ where: { id } });
     if (!reservation) throw new NotFoundException('Reservation not found');
+    if (reservation.userId !== req.user?.sub) throw new ForbiddenException('Доступ запрещён');
     if (reservation.status === 'cancelled') throw new BadRequestException('Already cancelled');
 
     await this.prisma.reservation.update({ where: { id }, data: { status: 'cancelled' } });

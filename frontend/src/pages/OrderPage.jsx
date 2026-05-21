@@ -36,6 +36,7 @@ export function OrderPage({ onNavigate, userData, initialOrderType, initialPromo
     lookrun_available: false,
     lookrun_used: false,
   });
+  const [customPromo, setCustomPromo] = useState(null);
 
   useEffect(() => {
     api.getMenu().then(setMenuItems).catch(console.error);
@@ -50,6 +51,21 @@ export function OrderPage({ onNavigate, userData, initialOrderType, initialPromo
     }
   }, [step, userData.email]);
 
+  useEffect(() => {
+    const code = (promoCode || '').trim().toUpperCase();
+    if (!code || code === 'LOOK20' || code === 'LOOK15' || code === 'LOOKRUN') {
+      setCustomPromo(null);
+      return;
+    }
+    let cancelled = false;
+    const t = setTimeout(() => {
+      api.lookupPromo(code)
+        .then((p) => { if (!cancelled) { setCustomPromo(p); setPromoError(null); } })
+        .catch(() => { if (!cancelled) setCustomPromo(null); });
+    }, 300);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [promoCode]);
+
   const categories = ['Все', ...Array.from(new Set(menuItems.map(item => item.category)))];
   const filteredItems = selectedCategory === 'Все' ? menuItems : menuItems.filter(item => item.category === selectedCategory);
 
@@ -57,8 +73,9 @@ export function OrderPage({ onNavigate, userData, initialOrderType, initialPromo
     let total = cart.reduce((total, item) => total + (menuItems.find(m => m.id === item.id)?.price || 0) * item.quantity, 0);
     // Для визуального расчета итога проверяем доступность через promoStatus напрямую
     if (promoCode === 'LOOK20' && promoStatus.look20_available) total = Math.floor(total * 0.8);
-    if (promoCode === 'LOOK15' && promoStatus.look15_available) total = Math.floor(total * 0.85);
-    if (promoCode === 'LOOKRUN' && promoStatus.lookrun_available) total = Math.floor(total * 0.9);
+    else if (promoCode === 'LOOK15' && promoStatus.look15_available) total = Math.floor(total * 0.85);
+    else if (promoCode === 'LOOKRUN' && promoStatus.lookrun_available) total = Math.floor(total * 0.9);
+    else if (customPromo && customPromo.code === promoCode) total = Math.floor(total * (1 - customPromo.discount / 100));
     return total;
   };
 
@@ -92,8 +109,10 @@ export function OrderPage({ onNavigate, userData, initialOrderType, initialPromo
         return false;
       }
     } else {
-      setPromoError({ message: 'ТАКОГО ПРОМОКОДА НЕ СУЩЕСТВУЕТ.', type: 'not_found' });
-      return false;
+      if (!customPromo || customPromo.code !== promoCode) {
+        setPromoError({ message: 'ТАКОГО ПРОМОКОДА НЕ СУЩЕСТВУЕТ.', type: 'not_found' });
+        return false;
+      }
     }
     return true;
   };
@@ -337,6 +356,17 @@ export function OrderPage({ onNavigate, userData, initialOrderType, initialPromo
                                <div>
                                   <p className="text-emerald-500 text-[10px] font-black uppercase tracking-[0.2em] mb-1 opacity-90">СПРИНТ ШЕФА</p>
                                   <p className="text-emerald-400 text-xs font-black italic tracking-widest uppercase">Скидка −10% за мини-игру применена!</p>
+                               </div>
+                             </motion.div>
+                          )}
+                          {!promoError && customPromo && customPromo.code === promoCode && (
+                             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mt-6 p-5 rounded-2xl border bg-amber-500/[0.03] border-amber-500/25 flex items-center gap-5 shadow-2xl shadow-amber-500/5">
+                               <div className="w-14 h-14 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center shrink-0">
+                                  <CheckCircle2 className="text-amber-400 w-7 h-7" strokeWidth={3} />
+                               </div>
+                               <div>
+                                  <p className="text-amber-500 text-[10px] font-black uppercase tracking-[0.2em] mb-1 opacity-90">УСПЕШНО ПРИМЕНЕНО</p>
+                                  <p className="text-amber-400 text-xs font-black italic tracking-widest uppercase">Скидка −{customPromo.discount}% применена!</p>
                                </div>
                              </motion.div>
                           )}

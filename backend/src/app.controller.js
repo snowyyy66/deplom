@@ -1,14 +1,11 @@
-import { Controller, Get, Inject } from '@nestjs/common';
-import { AppService } from './app.service';
+import { Controller, Get } from '@nestjs/common';
+import { Public } from './common/public.decorator.js';
 
 @Controller()
 export class AppController {
-  constructor(@Inject(AppService) appService) {
-    this.appService = appService;
-  }
-
-  @Get()
-  getHello() {
-    return this.appService.getHello();
+  @Public()
+  @Get('health')
+  health() {
+    return { status: 'ok' };
   }
 }
