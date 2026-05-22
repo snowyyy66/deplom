@@ -12,6 +12,8 @@ import {
   Inject,
   UseGuards,
 } from '@nestjs/common';
+import bcrypt from 'bcryptjs';
+import { timingSafeEqual } from 'crypto';
 import { AdminService } from './admin.service';
 import { signToken } from '../../common/jwt.utils.js';
 import { AdminGuard } from '../../common/admin.guard.js';
@@ -29,10 +31,20 @@ export class AdminController {
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('login')
   async adminLogin(@Body() body) {
-    const adminPassword = process.env.ADMIN_PASSWORD;
-    if (!adminPassword || body.password !== adminPassword) {
-      throw new ForbiddenException('Неверный пароль');
+    const input = String(body?.password ?? '');
+    const hash = process.env.ADMIN_PASSWORD_HASH;
+    const plain = process.env.ADMIN_PASSWORD;
+
+    let ok = false;
+    if (hash) {
+      ok = await bcrypt.compare(input, hash);
+    } else if (plain) {
+      const a = Buffer.from(input);
+      const b = Buffer.from(plain);
+      ok = a.length === b.length && timingSafeEqual(a, b);
     }
+
+    if (!ok) throw new ForbiddenException('Неверный пароль');
     return { token: signToken({ role: 'admin' }, '8h') };
   }
 

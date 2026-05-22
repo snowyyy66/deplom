@@ -13,7 +13,7 @@ function lookBannerPlugin() {
         const port = server.config.server.port || 5173;
         const line = '─'.repeat(50);
         console.log(`\n\x1b[36m${line}\x1b[0m`);
-        console.log(`\x1b[1m\x1b[36m  🌐  Look Restaurant — Фронтенд запущен\x1b[0m`);
+        console.log(`\x1b[1m\x1b[36m  Look Restaurant — Фронтенд запущен\x1b[0m`);
         console.log(`\x1b[36m${line}\x1b[0m`);
         console.log(`  \x1b[33mСайт:   \x1b[0mhttp://127.0.0.1:${port}`);
         console.log(`  \x1b[33mАдминка:\x1b[0mhttp://127.0.0.1:${port}/admin`);

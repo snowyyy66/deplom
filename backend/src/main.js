@@ -32,7 +32,7 @@ async function bootstrap() {
 
   const line = '─'.repeat(50);
   console.log(`\n\x1b[33m${line}\x1b[0m`);
-  console.log(`\x1b[1m\x1b[33m  🍽️  Look Restaurant — API запущен\x1b[0m`);
+  console.log(`\x1b[1m\x1b[33m  Look Restaurant — API запущен\x1b[0m`);
   console.log(`\x1b[33m${line}\x1b[0m`);
   console.log(`  \x1b[36mAPI:    \x1b[0mhttp://127.0.0.1:${port}/api`);
   console.log(`  \x1b[36mSwagger:\x1b[0mhttp://127.0.0.1:${port}/docs`);
