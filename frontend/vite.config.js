@@ -17,7 +17,7 @@ function lookBannerPlugin() {
         console.log(`\x1b[36m${line}\x1b[0m`);
         console.log(`  \x1b[33mСайт:   \x1b[0mhttp://127.0.0.1:${port}`);
         console.log(`  \x1b[33mАдминка:\x1b[0mhttp://127.0.0.1:${port}/admin`);
-        console.log(`  \x1b[33mПароль: \x1b[0mlook-admin-2024`);
+        console.log(`  \x1b[33mПароль: \x1b[0madmin123`);
         console.log(`\x1b[36m${line}\x1b[0m\n`);
       });
     },
@@ -40,6 +40,10 @@ export default defineConfig(({ mode }) => {
       host: '0.0.0.0',
       proxy: {
         '/api': {
+          target: apiTarget,
+          changeOrigin: true,
+        },
+        '/uploads': {
           target: apiTarget,
           changeOrigin: true,
         }

@@ -40,7 +40,7 @@ DATABASE_URL=file:./prisma/dev.db
 
 # JWT и админка
 JWT_SECRET=look-jwt-secret-dev
-ADMIN_PASSWORD=look-admin-2024
+ADMIN_PASSWORD=admin123
 
 # CORS и порт
 PORT=8000

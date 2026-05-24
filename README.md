@@ -174,7 +174,7 @@ npm run dev         # запускает backend и frontend параллель�
 ```env
 DATABASE_URL=file:./dev.db
 JWT_SECRET=change_me_to_a_random_secret
-ADMIN_PASSWORD=look-admin-2024
+ADMIN_PASSWORD=admin123
 PORT=8000
 ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 
@@ -188,7 +188,7 @@ GMAIL_APP_PASSWORD=xxxxxxxxxxxxxxxx
 GMAIL_ADDRESS=your@gmail.com
 GMAIL_APP_PASSWORD=xxxxxxxxxxxxxxxx
 JWT_SECRET=change_me_to_a_random_secret
-ADMIN_PASSWORD=look-admin-2024
+ADMIN_PASSWORD=admin123
 ```
 
 ### Объяснение полей

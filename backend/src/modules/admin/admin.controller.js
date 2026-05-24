@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   Get,
   Post,
@@ -11,7 +12,12 @@ import {
   Header,
   Inject,
   UseGuards,
+  UseInterceptors,
+  UploadedFile,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
+import { extname } from 'path';
 import bcrypt from 'bcryptjs';
 import { timingSafeEqual } from 'crypto';
 import { AdminService } from './admin.service';
@@ -19,6 +25,9 @@ import { signToken } from '../../common/jwt.utils.js';
 import { AdminGuard } from '../../common/admin.guard.js';
 import { Public } from '../../common/public.decorator.js';
 import { Throttle } from '@nestjs/throttler';
+
+const UPLOAD_DIR = './uploads';
+const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 
 @Controller('api/admin')
 @UseGuards(AdminGuard)
@@ -46,6 +55,30 @@ export class AdminController {
 
     if (!ok) throw new ForbiddenException('Неверный пароль');
     return { token: signToken({ role: 'admin' }, '8h') };
+  }
+
+  @Post('upload')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: diskStorage({
+        destination: UPLOAD_DIR,
+        filename: (req, file, cb) => {
+          const unique = Date.now() + '-' + Math.round(Math.random() * 1e9);
+          cb(null, unique + extname(file.originalname).toLowerCase());
+        },
+      }),
+      limits: { fileSize: 8 * 1024 * 1024 },
+      fileFilter: (req, file, cb) => {
+        if (!ALLOWED_MIME.includes(file.mimetype)) {
+          return cb(new BadRequestException('Поддерживаются только jpg/png/webp/gif'), false);
+        }
+        cb(null, true);
+      },
+    }),
+  )
+  async uploadImage(@UploadedFile() file) {
+    if (!file) throw new BadRequestException('Файл не загружен');
+    return { url: `/uploads/${file.filename}` };
   }
 
   @Get('menu/export-csv')

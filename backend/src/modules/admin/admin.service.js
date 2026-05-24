@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, Inject } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 
-const ORDER_STATUSES = ['new', 'confirmed', 'preparing', 'delivering', 'done', 'cancelled'];
+const ORDER_STATUSES = ['new', 'preparing', 'delivering', 'completed', 'cancelled'];
 const RESERVATION_STATUSES = ['pending', 'confirmed', 'cancelled'];
 
 @Injectable()

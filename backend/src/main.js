@@ -1,5 +1,8 @@
 import 'reflect-metadata';
 import 'dotenv/config';
+import { join } from 'path';
+import { mkdirSync } from 'fs';
+import express from 'express';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
@@ -9,6 +12,13 @@ const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ?? 'http://localhost:5173,h
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+
+  app.useBodyParser('json', { limit: '10mb' });
+  app.useBodyParser('urlencoded', { limit: '10mb', extended: true });
+
+  const uploadsDir = join(process.cwd(), 'uploads');
+  try { mkdirSync(uploadsDir, { recursive: true }); } catch {}
+  app.use('/uploads', express.static(uploadsDir));
 
   app.enableCors({
     origin: (origin, cb) => {

@@ -11,4 +11,4 @@ RUN npm run build
 
 EXPOSE 8000
 
-CMD ["sh", "-c", "npx prisma db push --schema prisma/schema.prisma && node prisma/seed.js && node dist/main"]
+CMD ["sh", "-c", "npx prisma db push --schema prisma/schema.prisma --accept-data-loss && node prisma/seed.js && node dist/main"]
