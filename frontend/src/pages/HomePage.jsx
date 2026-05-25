@@ -2,7 +2,7 @@ import { Button } from '@/components/ui/button';
 import {
   Star, ShoppingBag, Calendar,
   Plus, Minus, User, ArrowRight,
-  MessageSquare, Send, Quote,
+  MessageSquare, Send,
   UtensilsCrossed, Phone
 } from 'lucide-react';
 import { useEffect, useState, useMemo, useRef } from 'react';
@@ -190,17 +190,17 @@ export function HomePage({ onNavigate, userData, cart, addToCart, removeFromCart
       {/* Hero Section */}
       <motion.section
         style={{ opacity: heroOpacity }}
-        className="relative min-h-screen flex items-center justify-center pt-20"
+        className="relative min-h-screen flex items-center justify-center pt-20 overflow-x-hidden"
       >
         <div className="absolute inset-0 z-0">
           <div className="absolute inset-0 bg-[url('/hero-bg.jpg')] bg-cover bg-center bg-no-repeat opacity-40" />
           <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-background/80 to-background" />
         </div>
 
-        <div className="relative z-10 text-center px-4 max-w-5xl mx-auto mt-10">
+        <div className="relative z-10 text-center px-4 max-w-5xl mx-auto mt-10 w-full">
 
           <div className="text-6xl md:text-8xl font-black mb-8 leading-tight tracking-tight">
-            <div className="overflow-hidden">
+            <div className="overflow-hidden pb-3">
               <motion.span
                 initial={{ y: '110%' }}
                 animate={{ y: 0 }}
@@ -437,7 +437,6 @@ export function HomePage({ onNavigate, userData, cart, addToCart, removeFromCart
                         key={rev.id}
                         className="glassmorphism p-6 rounded-[2rem] border border-white/5 relative group hover:border-amber-500/30 transition-colors"
                       >
-                        <Quote size={40} className="absolute top-6 right-6 text-white/5 group-hover:text-amber-500/10 transition-colors" />
                         <div className="flex items-center gap-4 mb-4">
                           <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-amber-500 to-orange-600 flex items-center justify-center text-black font-black text-xl shadow-lg">
                             {rev.author_name.charAt(0).toUpperCase()}
