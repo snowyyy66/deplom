@@ -132,6 +132,13 @@ temp/
 # Личные материалы диплома (не часть приложения)
 # ============================================
 Look_Restaurant_Diplom.docx
+Look_Restaurant_Presentation.pptx
 deplom.md
 titulnik.md
 generate_diplom.py
+create_presentation.py
+speech_notes.txt
+defense_questions.txt
+pdf_content.txt
+F:gitdeplompdf_content.txt
+diploma_images/
