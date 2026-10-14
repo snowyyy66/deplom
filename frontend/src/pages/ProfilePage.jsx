@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
-import { api } from '../lib/api';
+import { api, setToken } from '../lib/api';
 
 const statusConfig = {
   'pending': { label: 'Ожидается', color: 'text-amber-400', bg: 'bg-amber-500/10 border-amber-500/20' },
@@ -57,14 +57,20 @@ export function ProfilePage({ onNavigate, userData, onUpdateUser }) {
     fetchData();
   }, [userData.id]);
 
-  const handleSave = () => {
-    onUpdateUser(formData);
-    setIsSaved(true);
-    setTimeout(() => setIsSaved(false), 2000);
-    toast.success('Данные сохранены');
+  const handleSave = async () => {
+    try {
+      const updated = await api.updateProfile({ name: formData.name, phone: formData.phone });
+      onUpdateUser({ ...userData, ...updated });
+      setIsSaved(true);
+      setTimeout(() => setIsSaved(false), 2000);
+      toast.success('Данные сохранены');
+    } catch (err) {
+      toast.error(err.message || 'Не удалось сохранить');
+    }
   };
 
   const handleLogout = () => {
+    setToken(null);
     onNavigate('auth');
   };
 
@@ -182,20 +188,6 @@ export function ProfilePage({ onNavigate, userData, onUpdateUser }) {
                 );
               })}
             </div>
-            {userData.email?.toLowerCase() === '123@123.com' && (
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => {
-                  sessionStorage.setItem('look_admin', '1');
-                  window.location.pathname = '/admin';
-                }}
-                className="flex items-center gap-2 px-5 py-3 rounded-2xl bg-gradient-to-r from-amber-500/20 to-orange-500/20 border border-amber-500/40 text-amber-400 hover:border-amber-500/70 hover:from-amber-500/30 hover:to-orange-500/30 transition-all text-sm font-bold whitespace-nowrap shadow-[0_0_20px_rgba(245,158,11,0.15)] shrink-0"
-              >
-                <ShieldCheck size={16} />
-                Админ панель
-              </motion.button>
-            )}
           </div>
 
           <AnimatePresence mode="wait">

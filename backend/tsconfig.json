@@ -1,14 +1,13 @@
 {
+  "include": ["src/**/*"],
   "compilerOptions": {
+    "ignoreDeprecations": "5.0",
     "module": "commonjs",
-    "moduleResolution": "node",
-    "esModuleInterop": true,
+    "target": "ES2021",
+    "rootDir": "./src",
+    "outDir": "./dist",
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
-    "target": "ES2021",
-    "outDir": "./dist",
-    "baseUrl": "./"
-  },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"]
+    "allowJs": true
+  }
 }

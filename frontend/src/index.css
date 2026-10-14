@@ -78,6 +78,35 @@
   .glow-amber {
     @apply shadow-[0_0_15px_rgba(245,158,11,0.5)];
   }
+  .custom-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(38 92% 50% / 0.4) transparent;
+  }
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 4px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: hsl(38 92% 50% / 0.4);
+    border-radius: 2px;
+  }
+}
+
+@keyframes blob {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(30px, -20px) scale(1.05); }
+  66% { transform: translate(-20px, 20px) scale(0.95); }
+}
+
+.animate-blob {
+  animation: blob 10s ease-in-out infinite;
+  will-change: transform;
+}
+
+.animation-delay-2000 {
+  animation-delay: 2s;
 }
 
 @layer base {

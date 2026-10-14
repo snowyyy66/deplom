@@ -2,49 +2,73 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: look_postgres
+    restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: look
+    ports:
+      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d look"]
       interval: 5s
       timeout: 5s
       retries: 10
+    networks:
+      - look_network
 
   api:
     build:
       context: ./backend
       dockerfile: Dockerfile
     container_name: look_api
+    restart: unless-stopped
     ports:
       - "8000:8000"
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/look?schema=public
       - GMAIL_ADDRESS=${GMAIL_ADDRESS:-}
       - GMAIL_APP_PASSWORD=${GMAIL_APP_PASSWORD:-}
+      - JWT_SECRET=${JWT_SECRET:-look-jwt-secret-dev}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
       - PORT=8000
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+    volumes:
+      - api_uploads:/app/uploads
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8000/api/menu > /dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 120s
+    networks:
+      - look_network
 
   web:
     build:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: look_web
+    restart: unless-stopped
     ports:
       - "5173:5173"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
     environment:
-      - WATCHPACK_POLLING=true
-      - VITE_API_URL=http://api:8000
+      - API_TARGET=http://api:8000
     depends_on:
-      - api
+      api:
+        condition: service_healthy
+    networks:
+      - look_network
 
 volumes:
   postgres_data:
+  api_uploads:
+
+networks:
+  look_network:
+    driver: bridge

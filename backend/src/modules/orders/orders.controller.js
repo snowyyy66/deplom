@@ -2,12 +2,15 @@ import {
   BadRequestException,
   Body,
   Controller,
+  ForbiddenException,
   Get,
   Inject,
   NotFoundException,
   Param,
   ParseIntPipe,
   Post,
+  Req,
+  UseGuards,
 } from '@nestjs/common';
 import {
   IsArray,
@@ -22,6 +25,10 @@ import {
 import { Type } from 'class-transformer';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ilike } from '../../common/db.utils';
+import { Public } from '../../common/public.decorator.js';
+import { AdminGuard } from '../../common/admin.guard.js';
+import { MailerService } from '../../common/mailer.service.js';
+
 
 class OrderItemDto {
   @IsInt({ message: 'Некорректный ID блюда' })
@@ -34,6 +41,7 @@ class OrderItemDto {
 
   @IsInt({ message: 'Цена должна быть числом' })
   @Min(0, { message: 'Цена не может быть отрицательной' })
+  @IsOptional()
   price;
 }
 
@@ -63,7 +71,7 @@ class CreateOrderDto {
   comment;
 
   @IsInt({ message: 'Сумма должна быть числом' })
-  @Min(0, { message: 'Сумма не может быть отрицательной' })
+  @IsOptional()
   total_amount;
 
   @IsInt({ message: 'Некорректный ID пользователя' })
@@ -100,28 +108,67 @@ function toOrderResponse(o) {
 
 @Controller('api')
 export class OrdersController {
-  constructor(@Inject(PrismaService) prisma) {
+  constructor(@Inject(PrismaService) prisma, @Inject(MailerService) mailer) {
     this.prisma = prisma;
+    this.mailer = mailer;
   }
 
+  @Public()
   @Post('orders')
-  async createOrder(@Body() body) {
-    const emailNorm = body.email?.trim() || null;
-
-    let user = null;
-    if (emailNorm) {
-      user = await this.prisma.user.findFirst({
-        where: { email: ilike(emailNorm) },
-      });
+  async createOrder(@Body() body, @Req() req) {
+    if (!Array.isArray(body.items) || body.items.length === 0) {
+      throw new BadRequestException('Корзина пуста');
     }
 
+    const emailNorm = body.email?.trim().toLowerCase() || null;
+    const authedUserId = req.user?.sub ?? null;
+
+    let user = null;
+    if (authedUserId) {
+      user = await this.prisma.user.findFirst({ where: { id: authedUserId } });
+    } else if (emailNorm) {
+      user = await this.prisma.user.findFirst({ where: { email: ilike(emailNorm) } });
+    }
+
+    const menuIds = [...new Set(body.items.map((i) => i.menu_item_id))];
+    const menuItems = await this.prisma.menuItem.findMany({ where: { id: { in: menuIds } } });
+    const menuMap = new Map(menuItems.map((m) => [m.id, m]));
+
+    const computedItems = body.items.map((it) => {
+      const menuItem = menuMap.get(it.menu_item_id);
+      if (!menuItem) throw new BadRequestException(`Блюдо id=${it.menu_item_id} не найдено`);
+      if (it.quantity > 100) throw new BadRequestException('Слишком большое количество');
+      return {
+        quantity: it.quantity,
+        price: menuItem.price,
+        menuItemId: menuItem.id,
+        nameSnapshot: menuItem.name,
+      };
+    });
+
+    let totalAmount = computedItems.reduce((s, i) => s + i.price * i.quantity, 0);
+
     if (body.promo_code) {
-      const validCodes = ['LOOK20', 'LOOK15', 'LOOKRUN'];
-      if (!validCodes.includes(body.promo_code)) {
-        throw new NotFoundException('ПРОМОКОД НЕ СУЩЕСТВУЕТ');
+      const code = String(body.promo_code).trim().toUpperCase();
+      const promo = await this.prisma.promoCode.findUnique({ where: { code } });
+      if (!promo || !promo.isActive) throw new NotFoundException('ПРОМОКОД НЕ СУЩЕСТВУЕТ');
+
+      const now = new Date();
+      if (promo.validFrom && now < promo.validFrom) {
+        throw new BadRequestException('Промокод ещё не активен');
+      }
+      if (promo.validUntil && now > promo.validUntil) {
+        throw new BadRequestException('Срок действия промокода истёк');
       }
 
-      if (body.promo_code === 'LOOK20') {
+      if (promo.usageLimit !== null && promo.usageLimit !== undefined) {
+        const used = await this.prisma.order.count({ where: { promoCode: code } });
+        if (used >= promo.usageLimit) {
+          throw new BadRequestException('Промокод исчерпан');
+        }
+      }
+
+      if (code === 'LOOK20') {
         if (emailNorm) {
           const hasOrders =
             (await this.prisma.order.findFirst({
@@ -130,8 +177,8 @@ export class OrdersController {
             })) !== null;
           if (hasOrders) throw new BadRequestException('ТОЛЬКО ДЛЯ ПЕРВОГО ЗАКАЗА');
         }
-      } else if (body.promo_code === 'LOOK15') {
-        if (!emailNorm || !user || user.hasFoundEasterEgg !== 1) {
+      } else if (code === 'LOOK15') {
+        if (!emailNorm || !user || !user.hasFoundEasterEgg) {
           throw new NotFoundException('ПРОМОКОД НЕ СУЩЕСТВУЕТ');
         }
         const usedLook15 =
@@ -140,12 +187,14 @@ export class OrdersController {
             select: { id: true },
           })) !== null;
         if (usedLook15) throw new BadRequestException('Вы уже использовали промокод LOOK15.');
-      } else if (body.promo_code === 'LOOKRUN') {
-        if (!emailNorm || !user) throw new NotFoundException('ПРОМОКОД НЕ СУЩЕСТВУЕТ');
-        if (user.runnerPromoEligible !== 1) {
+      } else if (code === 'LOOKRUN') {
+        if (!user) throw new NotFoundException('ПРОМОКОД НЕ СУЩЕСТВУЕТ');
+        if (!user.runnerPromoEligible) {
           throw new BadRequestException('Сначала пройдите мини-игру «Спринт шефа» в разделе заказа.');
         }
       }
+
+      totalAmount = Math.floor(totalAmount * (1 - promo.discount / 100));
     }
 
     const created = await this.prisma.order.create({
@@ -156,15 +205,9 @@ export class OrdersController {
         email: emailNorm,
         promoCode: body.promo_code ?? null,
         comment: body.comment ?? null,
-        totalAmount: body.total_amount,
-        userId: body.user_id ?? user?.id ?? null,
-        items: {
-          create: body.items.map((it) => ({
-            quantity: it.quantity,
-            price: it.price,
-            menuItemId: it.menu_item_id,
-          })),
-        },
+        totalAmount,
+        userId: authedUserId ?? user?.id ?? null,
+        items: { create: computedItems },
       },
       include: { items: true },
     });
@@ -172,13 +215,23 @@ export class OrdersController {
     if (body.promo_code === 'LOOKRUN' && user) {
       await this.prisma.user.update({
         where: { id: user.id },
-        data: { runnerPromoEligible: 0 },
+        data: { runnerPromoEligible: false },
       });
+    }
+
+    if (emailNorm) {
+      const mailItems = created.items.map((i) => ({
+        name: menuMap.get(i.menuItemId)?.name ?? `Блюдо #${i.menuItemId}`,
+        quantity: i.quantity,
+        price: i.price,
+      }));
+      this.mailer.sendOrderConfirmation(emailNorm, created, mailItems);
     }
 
     return toOrderResponse(created);
   }
 
+  @UseGuards(AdminGuard)
   @Get('orders')
   async getAllOrders() {
     const rows = await this.prisma.order.findMany({
@@ -189,7 +242,8 @@ export class OrdersController {
   }
 
   @Get('orders/user/:user_id')
-  async getUserOrders(@Param('user_id', ParseIntPipe) userId) {
+  async getUserOrders(@Param('user_id', ParseIntPipe) userId, @Req() req) {
+    if (req.user?.sub !== userId) throw new ForbiddenException('Доступ запрещён');
     const rows = await this.prisma.order.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },

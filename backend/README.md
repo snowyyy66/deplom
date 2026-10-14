@@ -10,10 +10,13 @@ REST API ресторана Look на базе **NestJS 11** + **Prisma 5**. Н�
 |---|---|
 | NestJS 11 | Фреймворк (модули, DI, guards, pipes) |
 | SWC | Быстрый компилятор JS (заменяет tsc) |
-| Prisma 5 | ORM, миграции |
-| PostgreSQL | БД (prod); SQLite (`dev.db`) — для разработки |
+| Prisma 5 | ORM, две схемы: PostgreSQL и SQLite |
+| PostgreSQL | БД для Docker/prod |
+| SQLite | БД для локальной разработки (`prisma/dev.db`) |
 | bcryptjs | Хеширование паролей |
-| nodemailer | Отправка email (восстановление пароля) |
+| jsonwebtoken | JWT для аутентификации |
+| nodemailer | Отправка email (восстановление пароля + подтверждение заказа) |
+| @nestjs/throttler | Rate limiting на чувствительных эндпоинтах |
 | class-validator | Валидация входящих данных |
 | @nestjs/swagger | Автоматическая Swagger-документация |
 
@@ -30,27 +33,30 @@ npm install
 
 ```env
 # SQLite (для разработки)
-DATABASE_URL="file:./prisma/dev.db"
+DATABASE_URL=file:./prisma/dev.db
 
-# PostgreSQL (для продакшена)
-# DATABASE_URL="postgresql://user:password@localhost:5432/look_db"
+# PostgreSQL (для Docker)
+# DATABASE_URL=postgresql://postgres:postgres@postgres:5432/look?schema=public
 
-# Gmail для отправки писем восстановления пароля
-GMAIL_ADDRESS="your@gmail.com"
-GMAIL_APP_PASSWORD="xxxx xxxx xxxx xxxx"
+# JWT и админка
+JWT_SECRET=look-jwt-secret-dev
+ADMIN_PASSWORD=admin123
+
+# CORS и порт
+PORT=8000
+ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+
+# Gmail SMTP (для писем; не обязательно для базовой работы)
+GMAIL_ADDRESS=your@gmail.com
+GMAIL_APP_PASSWORD=xxxxxxxxxxxxxxxx
 ```
 
 ### База данных
 
 ```bash
-# Применить схему (создать таблицы)
-npm run db:push
-
-# Заполнить меню 18-ю блюдами
-npm run db:seed
+npm run db:push   # применить SQLite-схему (schema.sqlite.prisma)
+npm run db:seed   # заполнить меню (18 блюд) + базовые промокоды
 ```
-
-> Если уже есть готовый `dev.db` — этот шаг можно пропустить.
 
 ### Запуск
 
@@ -60,6 +66,17 @@ npm run build       # компиляция JS → dist/ через SWC
 npm run start:prod  # запуск скомпилированного dist/main.js
 ```
 
+### Миграция SQLite → PostgreSQL
+
+Если уже работали локально и хотите перенести данные в Docker-PostgreSQL:
+
+```bash
+# (после docker compose up с открытым портом 5432:5432)
+node scripts/migrate-to-pg.js
+```
+
+Скрипт читает `prisma/dev.db` и переносит users / orders / reservations / reviews / promo_codes / contact_messages.
+
 ---
 
 ## Структура проекта
@@ -67,10 +84,15 @@ npm run start:prod  # запуск скомпилированного dist/main.
 ```
 backend/
 ├── src/
-│   ├── main.js                  # Точка входа
-│   ├── app.module.js            # Корневой модуль
+│   ├── main.js                  # Точка входа (CORS, Swagger, ValidationPipe)
+│   ├── app.module.js            # Корневой модуль + Throttler + global guards
 │   ├── common/
-│   │   ├── db.utils.js          # ilike() для SQLite/Postgres совместимости
+│   │   ├── admin.guard.js       # Guard на admin-эндпоинты (JWT с role=admin)
+│   │   ├── jwt-auth.guard.js    # Global JWT guard (с @Public для исключений)
+│   │   ├── jwt.utils.js         # signToken / verifyToken
+│   │   ├── public.decorator.js  # @Public() — пропуск JWT-проверки
+│   │   ├── mailer.service.js    # Nodemailer (Gmail SMTP 465/SSL)
+│   │   ├── db.utils.js          # ilike() — совместимость SQLite/Postgres
 │   │   └── http-exception.filter.js
 │   ├── config/
 │   │   └── constants.js         # MAX_TABLES, MIN_RUNNER_SCORE
@@ -78,21 +100,24 @@ backend/
 │   │   ├── prisma.module.js
 │   │   └── prisma.service.js
 │   └── modules/
-│       ├── auth/                # Регистрация, логин, сброс пароля
-│       ├── menu/                # Меню (GET публичный)
-│       ├── orders/              # Заказы + валидация промокодов
+│       ├── auth/                # Регистрация, логин, JWT, сброс пароля
+│       ├── menu/                # Меню (публичный GET)
+│       ├── orders/              # Заказы + валидация промокодов + email
 │       ├── reservations/        # Бронирования
 │       ├── reviews/             # Отзывы
-│       ├── promos/              # promo-status, easter egg, runner-reward
+│       ├── promos/              # promo-status, promo/lookup, easter egg, runner
 │       ├── contact/             # Форма обратной связи
-│       └── admin/               # Все admin-эндпоинты (x-admin-key)
+│       └── admin/               # Admin-эндпоинты (JWT с ролью admin)
 ├── prisma/
-│   ├── schema.prisma            # PostgreSQL (prod)
-│   ├── schema.sqlite.prisma     # SQLite (dev)
-│   ├── seed.js                  # Заполнение меню (CommonJS, node напрямую)
-│   └── dev.db                   # SQLite база (dev)
+│   ├── schema.prisma            # PostgreSQL (Docker / prod)
+│   ├── schema.sqlite.prisma     # SQLite (локальная разработка)
+│   ├── seed.js                  # Заполнение меню + промокодов
+│   └── dev.db                   # SQLite-база для dev (не в git)
+├── scripts/
+│   └── migrate-to-pg.js         # Перенос данных SQLite → PostgreSQL
+├── Dockerfile                   # node:20-alpine + Prisma + Nest build
 ├── .swcrc                       # Конфиг SWC-компилятора
-└── .env                         # Переменные окружения (не в репо)
+└── .env                         # Переменные окружения (не в git)
 ```
 
 ---
@@ -112,33 +137,31 @@ backend/
 
 | Метод | Путь | Описание |
 |---|---|---|
-| POST | `/api/register` | Регистрация: `{ name, email, phone, password }` |
-| POST | `/api/login` | Вход: `{ email, password }` |
-| POST | `/api/forgot-password` | Запрос кода сброса: `{ email }` |
+| POST | `/api/register` | Регистрация: `{ name, email, phone, password }` → `{ user, token }` |
+| POST | `/api/login` | Вход: `{ email, password }` → `{ user, token }` |
+| POST | `/api/forgot-password` | Запрос кода сброса: `{ email }` (email уходит в фоне) |
 | POST | `/api/reset-password` | Сброс пароля: `{ email, code, new_password }` |
+| PATCH | `/api/profile` | Обновление профиля (JWT обязателен) |
 
 ### Меню
 
 | Метод | Путь | Описание |
 |---|---|---|
-| GET | `/api/menu` | Список всех блюд |
-| POST | `/api/menu` | Добавить блюдо |
+| GET | `/api/menu` | Список всех блюд (публичный) |
 
 ### Заказы
 
 | Метод | Путь | Описание |
 |---|---|---|
-| POST | `/api/orders` | Создать заказ (валидация промокода на сервере) |
-| GET | `/api/orders` | Все заказы |
-| GET | `/api/orders/user/:id` | Заказы конкретного пользователя |
+| POST | `/api/orders` | Создать заказ (валидация промокода на сервере, email-подтверждение) |
+| GET | `/api/orders/user/:id` | Заказы конкретного пользователя (JWT) |
 
 ### Бронирования
 
 | Метод | Путь | Описание |
 |---|---|---|
 | POST | `/api/reservations` | Создать бронирование |
-| GET | `/api/reservations` | Все бронирования |
-| GET | `/api/reservations/user/:id` | Брони пользователя |
+| GET | `/api/reservations/user/:id` | Брони пользователя (JWT) |
 | GET | `/api/reservations/availability` | Занятые столики: `?date=YYYY-MM-DD&time=HH:mm` |
 | PATCH | `/api/reservations/:id/cancel` | Отмена бронирования |
 
@@ -146,7 +169,7 @@ backend/
 
 | Метод | Путь | Описание |
 |---|---|---|
-| GET | `/api/reviews` | Все отзывы |
+| GET | `/api/reviews` | Все отзывы (публичный) |
 | POST | `/api/reviews` | Добавить отзыв |
 | GET | `/api/reviews/user/:id` | Отзывы пользователя |
 
@@ -154,9 +177,10 @@ backend/
 
 | Метод | Путь | Описание |
 |---|---|---|
-| GET | `/api/promo-status` | Статус промокодов: `?email=...` |
-| POST | `/api/user/runner-reward` | Разблокировать LOOKRUN: `{ email, score }` (score ≥ 2500) |
-| POST | `/api/user/found-easter-egg` | Отметить находку пасхалки: `{ email }` |
+| GET | `/api/promo-status?email=…` | Статус системных промокодов для пользователя |
+| GET | `/api/promo/lookup?code=…` | Проверка произвольного промокода (для кастомных из админки) |
+| POST | `/api/user/runner-reward` | Разблокировать LOOKRUN: `{ score }` (score ≥ 2500) |
+| POST | `/api/user/found-easter-egg` | Отметить находку пасхалки |
 
 ### Контакт
 
@@ -168,104 +192,51 @@ backend/
 
 ## Admin-эндпоинты
 
-Все admin-запросы требуют заголовок:
-```
-x-admin-key: look-admin-2024
-```
+Авторизация по JWT с `role=admin` (получается через `POST /api/admin/login` с паролем из `ADMIN_PASSWORD`).
 
 | Метод | Путь | Описание |
 |---|---|---|
-| GET | `/api/admin/menu` | Список блюд |
-| POST | `/api/admin/menu` | Добавить блюдо |
-| PATCH | `/api/admin/menu/:id` | Обновить блюдо |
-| DELETE | `/api/admin/menu/:id` | Удалить блюдо |
+| POST | `/api/admin/login` | Вход в админку: `{ password }` → `{ token }` (TTL 8ч) |
+| GET / POST / PATCH / DELETE | `/api/admin/menu[/:id]` | CRUD блюд |
 | GET | `/api/admin/menu/export-csv` | Экспорт меню в CSV |
-| GET | `/api/admin/orders` | Все заказы с позициями |
-| PATCH | `/api/admin/orders/:id/status` | Сменить статус заказа |
+| GET | `/api/admin/orders` | Все заказы |
+| PATCH | `/api/admin/orders/:id/status` | Сменить статус |
 | GET | `/api/admin/reservations` | Все бронирования |
 | PATCH | `/api/admin/reservations/:id/status` | Сменить статус брони |
-| GET | `/api/admin/reviews` | Все отзывы |
-| DELETE | `/api/admin/reviews/:id` | Удалить отзыв |
+| GET / DELETE | `/api/admin/reviews[/:id]` | Список и удаление отзывов |
 | GET | `/api/admin/messages` | Сообщения из формы обратной связи |
+| GET / POST / PATCH / DELETE | `/api/admin/promos[/:id]` | CRUD промокодов |
 
 ---
 
-## Логика промокодов
+## Промокоды
 
-### LOOK20 (−20%)
-- Только для первого заказа по email
+### Системные (зашиты в логику)
 
-### LOOK15 (−15%)
-- Доступен только если `user.hasFoundEasterEgg = 1`
-- Однократное использование
+| Код | Скидка | Условие |
+|---|---|---|
+| `LOOK20` | −20% | Только первый заказ |
+| `LOOK15` | −15% | После находки пасхалки в интерфейсе |
+| `LOOKRUN` | −10% | После 2500 очков в мини-игре «Спринт шефа» |
 
-### LOOKRUN (−10%)
-- Доступен если `user.runnerPromoEligible = 1` (после прохождения мини-игры)
-- После применения флаг сбрасывается в 0
+### Кастомные
+
+Создаются через админку (`POST /api/admin/promos`). Поля:
+- `code` (uppercase, уникален), `discount` (1–100)
+- `description?`, `isActive` (по умолчанию `true`)
+- `validFrom?`, `validUntil?`, `usageLimit?`
+
+Проверяются через `GET /api/promo/lookup?code=...`, применяются автоматически на сервере при создании заказа.
 
 ---
 
-## Схема базы данных
+## Безопасность
 
-### User
-| Поле | Тип | Описание |
-|---|---|---|
-| id | Int PK | Автоинкремент |
-| name | String | Имя |
-| email | String unique | Email |
-| phone | String | Телефон |
-| passwordHash | String | bcrypt-хеш |
-| hasFoundEasterEgg | Int (0/1) | Нашёл ли пасхалку |
-| runnerPromoEligible | Int (0/1) | Доступен ли LOOKRUN |
-
-### MenuItem
-| Поле | Тип | Описание |
-|---|---|---|
-| id | Int PK | — |
-| name | String | Название |
-| price | Int | Цена в рублях |
-| category | String | Основные / Закуски / Десерты / Салаты |
-| imageUrl | String | Путь к изображению |
-| rating | Float | Рейтинг |
-| prepTime | Int | Время приготовления, мин |
-| description | String? | Описание |
-| tag | String? | Хит / Новинка / Веган / … |
-
-### Order
-| Поле | Тип | Описание |
-|---|---|---|
-| id | Int PK | — |
-| userId | Int? FK | Привязка к пользователю |
-| address | String | Адрес доставки |
-| phone | String | Телефон |
-| recipientName | String | Имя получателя |
-| totalAmount | Int | Итоговая сумма |
-| promoCode | String? | Использованный промокод |
-| email | String? | Email |
-| status | String | new / preparing / delivering / completed / cancelled |
-
-### Reservation
-| Поле | Тип | Описание |
-|---|---|---|
-| id | Int PK | — |
-| userId | Int? FK | Привязка к пользователю |
-| name | String | Имя гостя |
-| phone | String | Телефон |
-| date | DateTime | Дата визита |
-| time | String | Время (напр. "19:30") |
-| guestsCount | Int | Количество гостей |
-| tableNumber | Int? | Номер столика (1–23) |
-| notes | String? | Особые пожелания |
-| status | String | pending / confirmed / cancelled |
-
-### Review
-| Поле | Тип | Описание |
-|---|---|---|
-| id | Int PK | — |
-| userId | Int? FK | Привязка к пользователю |
-| authorName | String | Имя автора |
-| rating | Int | 1–5 |
-| text | String | Текст отзыва |
+- **Throttler**: 5 register / 10 login / 3 forgot-password / 5 reset-password / 5 admin-login запросов в минуту
+- **JWT** — глобальный guard (с `@Public()` для исключений)
+- **Validation pipe** — `whitelist + transform`, отсечение лишних полей
+- **bcrypt** — все пароли и одноразовые коды восстановления
+- **CORS** — белый список из `ALLOWED_ORIGINS`
 
 ---
 

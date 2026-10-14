@@ -1,14 +1,17 @@
 import {
   Body,
   Controller,
+  ForbiddenException,
   Get,
   Inject,
   Param,
   ParseIntPipe,
   Post,
+  Req,
 } from '@nestjs/common';
 import { IsInt, IsNotEmpty, IsOptional, IsString, Max, Min } from 'class-validator';
 import { PrismaService } from '../../prisma/prisma.service';
+import { Public } from '../../common/public.decorator.js';
 
 class CreateReviewDto {
   @IsString({ message: 'Имя должно быть строкой' })
@@ -47,18 +50,19 @@ export class ReviewsController {
   }
 
   @Post('reviews')
-  async create(@Body() body) {
+  async create(@Body() body, @Req() req) {
     const created = await this.prisma.review.create({
       data: {
         authorName: body.author_name,
         rating: body.rating,
         text: body.text,
-        userId: body.user_id ?? null,
+        userId: req.user?.sub ?? null,
       },
     });
     return toReviewResponse(created);
   }
 
+  @Public()
   @Get('reviews')
   async list() {
     const rows = await this.prisma.review.findMany({ orderBy: { createdAt: 'desc' } });
@@ -66,7 +70,8 @@ export class ReviewsController {
   }
 
   @Get('reviews/user/:user_id')
-  async getUserReviews(@Param('user_id', ParseIntPipe) userId) {
+  async getUserReviews(@Param('user_id', ParseIntPipe) userId, @Req() req) {
+    if (req.user?.sub !== userId) throw new ForbiddenException('Доступ запрещён');
     const rows = await this.prisma.review.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },

@@ -1,8 +1,8 @@
-import { BadRequestException, Body, Controller, Get, Inject, Post, Query } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Inject, Post, Query, Req } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ilike } from '../../common/db.utils';
-
-const MIN_RUNNER_SCORE = 2500;
+import { Public } from '../../common/public.decorator.js';
+import { MIN_RUNNER_SCORE } from '../../config/constants';
 
 @Controller('api')
 export class PromosController {
@@ -10,6 +10,28 @@ export class PromosController {
     this.prisma = prisma;
   }
 
+  @Public()
+  @Get('promo/lookup')
+  async lookupPromo(@Query('code') code) {
+    const normalized = String(code ?? '').trim().toUpperCase();
+    if (!normalized) throw new BadRequestException('Введите код');
+    const promo = await this.prisma.promoCode.findUnique({ where: { code: normalized } });
+    if (!promo || !promo.isActive) throw new BadRequestException('ПРОМОКОД НЕ СУЩЕСТВУЕТ');
+    const now = new Date();
+    if (promo.validFrom && now < promo.validFrom) {
+      throw new BadRequestException('Промокод ещё не активен');
+    }
+    if (promo.validUntil && now > promo.validUntil) {
+      throw new BadRequestException('Срок действия промокода истёк');
+    }
+    if (promo.usageLimit !== null && promo.usageLimit !== undefined) {
+      const used = await this.prisma.order.count({ where: { promoCode: normalized } });
+      if (used >= promo.usageLimit) throw new BadRequestException('Промокод исчерпан');
+    }
+    return { code: promo.code, discount: promo.discount };
+  }
+
+  @Public()
   @Get('promo-status')
   async promoStatus(@Query('email') email) {
     const fallback = {
@@ -48,8 +70,8 @@ export class PromosController {
         select: { id: true },
       })) !== null;
 
-    const hasFound = user ? user.hasFoundEasterEgg === 1 : false;
-    const lookrunAvailable = user ? user.runnerPromoEligible === 1 : false;
+    const hasFound = !!user?.hasFoundEasterEgg;
+    const lookrunAvailable = !!user?.runnerPromoEligible;
 
     return {
       look20_available: !hasOrders,
@@ -61,47 +83,30 @@ export class PromosController {
   }
 
   @Post('user/found-easter-egg')
-  async foundEasterEgg(@Body() body) {
-    const email = (body?.email ?? '').trim();
-    if (!email) throw new BadRequestException('Укажите email аккаунта');
-
-    const user = await this.prisma.user.findFirst({
-      where: { email: ilike(email) },
-    });
-    if (!user) throw new BadRequestException('Пользователь не найден');
+  async foundEasterEgg(@Req() req) {
+    const userId = req.user?.sub;
+    if (!userId) throw new BadRequestException('Необходима авторизация');
 
     await this.prisma.user.update({
-      where: { id: user.id },
-      data: { hasFoundEasterEgg: 1 },
+      where: { id: userId },
+      data: { hasFoundEasterEgg: true },
     });
 
     return { message: 'Easter egg marked as found' };
   }
 
   @Post('user/runner-reward')
-  async runnerReward(@Body() body) {
+  async runnerReward(@Body() body, @Req() req) {
     if ((body?.score ?? 0) < MIN_RUNNER_SCORE) {
       throw new BadRequestException('Недостаточно очков — добегите до финиша в игре.');
     }
 
-    const emailNorm = (body?.email ?? '').trim().toLowerCase();
-    if (!emailNorm) {
-      throw new BadRequestException('Укажите email аккаунта, под которым вы вошли на сайт.');
-    }
-
-    const user = await this.prisma.user.findFirst({
-      where: { email: ilike(emailNorm) },
-    });
-
-    if (!user) {
-      throw new BadRequestException(
-        'Аккаунт с такой почтой не найден. Войдите в профиль и попробуйте снова.',
-      );
-    }
+    const userId = req.user?.sub;
+    if (!userId) throw new BadRequestException('Необходима авторизация');
 
     await this.prisma.user.update({
-      where: { id: user.id },
-      data: { runnerPromoEligible: 1 },
+      where: { id: userId },
+      data: { runnerPromoEligible: true },
     });
 
     return { ok: true };

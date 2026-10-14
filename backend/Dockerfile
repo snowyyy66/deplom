@@ -1,4 +1,5 @@
 FROM node:20-alpine
+RUN apk add --no-cache openssl
 WORKDIR /app
 
 COPY package*.json ./
@@ -10,4 +11,4 @@ RUN npm run build
 
 EXPOSE 8000
 
-CMD ["sh", "-c", "npx prisma db push --schema prisma/schema.prisma && npx ts-node --transpile-only prisma/seed.ts && node dist/main"]
+CMD ["sh", "-c", "npx prisma db push --schema prisma/schema.prisma --accept-data-loss && node prisma/seed.js && node dist/main"]

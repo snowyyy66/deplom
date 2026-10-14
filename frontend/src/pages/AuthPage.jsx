@@ -86,10 +86,10 @@ export function AuthPage({ onAuth }) {
 
     try {
       if (mode === 'login') {
-        const user = await api.login(formData.email, formData.password);
+        const { user } = await api.login(formData.email, formData.password);
         onAuth({ id: user.id, name: user.name, email: user.email, phone: user.phone, has_found_easter_egg: user.has_found_easter_egg });
       } else {
-        const user = await api.register(formData.name, formData.email, formData.phone, formData.password);
+        const { user } = await api.register(formData.name, formData.email, formData.phone, formData.password);
         onAuth({ id: user.id, name: user.name, email: user.email, phone: user.phone, has_found_easter_egg: user.has_found_easter_egg });
       }
     } catch (err) {
@@ -443,6 +443,7 @@ export function AuthPage({ onAuth }) {
                         id="password"
                         type={showPassword ? 'text' : 'password'}
                         placeholder="••••••••"
+                        maxLength={100}
                         value={formData.password}
                         onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                         className="bg-black/50 border-white/8 text-white placeholder:text-white/15 h-14 rounded-xl focus:border-amber-500/40 pr-14 transition-colors font-light tracking-widest px-5"

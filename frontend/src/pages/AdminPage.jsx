@@ -1,16 +1,60 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ShoppingBag, Calendar, Star, MessageSquare, UtensilsCrossed,
-  LogOut, Plus, Trash2, Edit3, Save, X, Download, Eye,
-  Users, TrendingUp, Package, ChevronRight, Check
+  LogOut, Plus, Trash2, Edit3, Save, X, Download, Eye, Upload, ImagePlus,
+  Users, TrendingUp, Package, ChevronRight, ChevronDown, Check, Ticket, Power, CalendarIcon,
+  AlertTriangle
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { format } from 'date-fns';
+import { ru } from 'date-fns/locale';
+import { getAdminToken } from '../lib/api';
+import { Calendar as CalendarPicker } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { cn } from '@/lib/utils';
 
-const ADMIN_KEY = 'look-admin-2024';
+function PromoDatePicker({ value, onChange, placeholder, disabled }) {
+  const date = value ? new Date(value) : null;
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button type="button" className="w-full h-[42px] bg-black/50 border border-white/10 rounded-xl px-3 text-left text-sm text-white hover:bg-black/70 transition-colors flex items-center justify-between gap-2">
+          <span className={date ? '' : 'text-gray-500'}>
+            {date ? format(date, 'd MMMM yyyy', { locale: ru }) : placeholder}
+          </span>
+          <div className="flex items-center gap-1.5">
+            {date && (
+              <span onClick={(e) => { e.stopPropagation(); onChange(''); }} className="text-gray-500 hover:text-white p-0.5 rounded transition-colors cursor-pointer">
+                <X size={14} />
+              </span>
+            )}
+            <CalendarIcon size={16} className="text-amber-500/80" />
+          </div>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-auto p-0 border-white/10 bg-black shadow-2xl rounded-2xl z-[200]" align="start" sideOffset={8}>
+        <CalendarPicker
+          mode="single"
+          selected={date ?? undefined}
+          onSelect={(d) => onChange(d ? d.toISOString() : '')}
+          locale={ru}
+          disabled={disabled}
+          className="p-4 bg-black text-white"
+          classNames={{
+            day: cn('text-amber-500/80 hover:bg-amber-500 hover:text-black transition-all rounded-xl w-10 h-10 flex items-center justify-center text-sm font-medium'),
+            day_selected: 'bg-amber-500 text-black font-black shadow-[0_0_20px_rgba(245,158,11,0.5)] !opacity-100',
+            day_today: 'text-white border border-amber-500/50',
+            day_disabled: 'text-gray-700 opacity-40',
+          }}
+        />
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 const adminFetch = (url, options = {}) =>
-  fetch(url, { ...options, headers: { 'Content-Type': 'application/json', 'x-admin-key': ADMIN_KEY, ...(options.headers || {}) } });
+  fetch(url, { ...options, headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getAdminToken()}`, ...(options.headers || {}) } });
 
 const statusLabels = {
   pending: 'Ожидает', confirmed: 'Подтверждён', cancelled: 'Отменён',
@@ -24,7 +68,285 @@ const tabs = [
   { id: 'reservations', label: 'Брони', icon: Calendar },
   { id: 'reviews', label: 'Отзывы', icon: Star },
   { id: 'messages', label: 'Сообщения', icon: MessageSquare },
+  { id: 'promos', label: 'Промокоды', icon: Ticket },
 ];
+
+const emptyPromo = { code: '', discount: 10, description: '', is_active: true, valid_from: '', valid_until: '', usage_limit: '' };
+
+const DEFAULT_DISH_TAGS = ['Хит', 'Новинка', 'Веган', 'Маст хэв', 'Популярное', 'Нежное', 'Выбор шефа'];
+
+const labelCls = 'text-xs text-gray-500 uppercase tracking-widest mb-1 block';
+const inputCls = 'w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-white text-sm focus:border-amber-500/50 outline-none';
+
+async function uploadImage(file) {
+  const fd = new FormData();
+  fd.append('file', file);
+  const res = await fetch('/api/admin/upload', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${getAdminToken()}` },
+    body: fd,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Не удалось загрузить файл');
+  }
+  const { url } = await res.json();
+  return url;
+}
+
+function SiteSelect({ value, onChange, options, placeholder, allowCustom, customLabel = '+ Добавить новое' }) {
+  const [open, setOpen] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [draft, setDraft] = useState('');
+
+  const handlePick = (v) => {
+    onChange(v);
+    setOpen(false);
+  };
+
+  const submitDraft = () => {
+    const v = draft.trim();
+    if (!v) return;
+    onChange(v);
+    setDraft('');
+    setAdding(false);
+    setOpen(false);
+  };
+
+  return (
+    <Popover open={open} onOpenChange={(o) => { setOpen(o); if (!o) { setAdding(false); setDraft(''); } }}>
+      <PopoverTrigger asChild>
+        <button type="button" className="w-full h-[42px] bg-black/50 border border-white/10 hover:border-amber-500/30 rounded-xl px-3 text-left text-sm text-white transition-colors flex items-center justify-between gap-2">
+          <span className={value ? 'truncate' : 'text-gray-500'}>{value || placeholder}</span>
+          <ChevronDown size={16} className="text-amber-500/70 shrink-0" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-1.5 border-white/10 bg-[#0f0f0f] shadow-2xl rounded-2xl z-[200]" align="start" sideOffset={6}>
+        <div className="max-h-60 overflow-y-auto">
+          {options.map(opt => (
+            <button key={opt} type="button" onClick={() => handlePick(opt)}
+              className={cn('w-full text-left px-3 py-2 rounded-xl text-sm transition-colors flex items-center justify-between gap-2',
+                value === opt ? 'bg-amber-500/15 text-amber-400' : 'text-gray-200 hover:bg-white/5')}>
+              <span className="truncate">{opt}</span>
+              {value === opt && <Check size={14} className="text-amber-400 shrink-0" />}
+            </button>
+          ))}
+          {options.length > 0 && allowCustom && <div className="h-px bg-white/5 my-1" />}
+          {allowCustom && (
+            adding ? (
+              <div className="flex gap-1 p-1">
+                <input autoFocus type="text" value={draft} onChange={e => setDraft(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') submitDraft(); if (e.key === 'Escape') setAdding(false); }}
+                  placeholder="Своё значение"
+                  className="flex-1 bg-black/60 border border-amber-500/30 rounded-lg px-2.5 py-1.5 text-sm text-white outline-none focus:border-amber-500/60" />
+                <button type="button" onClick={submitDraft} className="px-2 bg-amber-500 hover:bg-amber-400 text-black rounded-lg" title="Добавить">
+                  <Check size={14} />
+                </button>
+              </div>
+            ) : (
+              <button type="button" onClick={() => setAdding(true)}
+                className="w-full text-left px-3 py-2 rounded-xl text-sm text-amber-400 hover:bg-amber-500/10 transition-colors flex items-center gap-2">
+                <Plus size={14} /> {customLabel}
+              </button>
+            )
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function ConfirmDialog({ open, title, message, confirmLabel = 'Удалить', onConfirm, onCancel }) {
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[300] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/85 backdrop-blur-sm" onClick={onCancel} />
+          <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
+            className="relative bg-[#0a0a0a] border border-amber-500/30 rounded-3xl p-8 max-w-md w-full shadow-[0_0_80px_rgba(245,158,11,0.15)]">
+            <div className="flex items-center gap-4 mb-5">
+              <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center shrink-0">
+                <AlertTriangle size={22} className="text-amber-400" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-white">{title}</h3>
+                {message && <p className="text-sm text-gray-400 mt-1">{message}</p>}
+              </div>
+            </div>
+            <div className="flex gap-3 justify-end">
+              <button onClick={onCancel} className="px-5 py-2.5 bg-white/5 hover:bg-white/10 text-gray-300 rounded-xl text-sm font-medium transition-colors">
+                Отмена
+              </button>
+              <button onClick={onConfirm} className="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-black rounded-xl text-sm font-bold transition-colors flex items-center gap-2">
+                <Trash2 size={14} /> {confirmLabel}
+              </button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+function StarRating({ value = 0, onChange }) {
+  const [hover, setHover] = useState(0);
+  const display = hover || value || 0;
+
+  const setStar = (n, half) => onChange?.(half ? n - 0.5 : n);
+  const previewStar = (n, half) => setHover(half ? n - 0.5 : n);
+
+  return (
+    <div className="flex items-center gap-1" onMouseLeave={() => setHover(0)}>
+      {[1, 2, 3, 4, 5].map(n => {
+        const filled = display >= n;
+        const half = display >= n - 0.5 && display < n;
+        return (
+          <div key={n} className="relative w-7 h-7 cursor-pointer">
+            <Star size={28} className="absolute inset-0 text-gray-700" />
+            {(filled || half) && (
+              <div className="absolute inset-0 overflow-hidden" style={{ width: filled ? '100%' : '50%' }}>
+                <Star size={28} className="text-amber-400 fill-amber-400" />
+              </div>
+            )}
+            <div className="absolute inset-y-0 left-0 w-1/2" onMouseEnter={() => previewStar(n, true)} onClick={() => setStar(n, true)} />
+            <div className="absolute inset-y-0 right-0 w-1/2" onMouseEnter={() => previewStar(n, false)} onClick={() => setStar(n, false)} />
+          </div>
+        );
+      })}
+      <span className="ml-3 text-sm font-mono text-amber-400 min-w-[2.5rem]">{Number(display).toFixed(1)}</span>
+    </div>
+  );
+}
+
+function DishForm({ dish, setDish, onSave, onCancel, title, categories, tags }) {
+  const fileRef = useRef(null);
+  const [uploading, setUploading] = useState(false);
+
+  const handleFile = async (file) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error('Можно загрузить только изображение');
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      toast.error('Файл больше 8MB');
+      return;
+    }
+    setUploading(true);
+    try {
+      const url = await uploadImage(file);
+      setDish(d => ({ ...d, image_url: url }));
+      toast.success('Фото загружено');
+    } catch (e) {
+      toast.error(e?.message || 'Не удалось загрузить изображение');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="glassmorphism-dark rounded-2xl p-6 border border-amber-500/30 mb-6">
+      <h3 className="text-lg font-bold text-amber-400 mb-5">{title}</h3>
+
+      <div className="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-6 mb-5">
+        <div>
+          <label className={labelCls}>Фото блюда</label>
+          {dish.image_url ? (
+            <div className="relative group w-[200px] h-[150px]">
+              <img src={dish.image_url} alt="" className="w-full h-full object-cover rounded-xl border border-white/10" />
+              <div className="absolute inset-0 bg-black/60 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                <button type="button" onClick={() => fileRef.current?.click()} className="p-2 bg-white/10 hover:bg-white/20 rounded-lg" title="Заменить">
+                  <Upload size={16} />
+                </button>
+                <button type="button" onClick={() => setDish(d => ({ ...d, image_url: '' }))} className="p-2 bg-red-500/80 hover:bg-red-500 rounded-lg" title="Удалить">
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading}
+              className="w-[200px] h-[150px] border-2 border-dashed border-white/15 hover:border-amber-500/50 hover:bg-amber-500/5 rounded-xl flex flex-col items-center justify-center gap-2 transition-all">
+              {uploading ? (
+                <>
+                  <div className="w-6 h-6 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
+                  <span className="text-xs text-gray-400">Загрузка…</span>
+                </>
+              ) : (
+                <>
+                  <ImagePlus size={28} className="text-amber-500/70" />
+                  <span className="text-xs text-gray-300">Выбрать фото</span>
+                  <span className="text-[10px] text-gray-500">JPG / PNG / WEBP, до 8MB</span>
+                </>
+              )}
+            </button>
+          )}
+          <input ref={fileRef} type="file" accept="image/*" className="hidden"
+            onChange={e => { handleFile(e.target.files?.[0]); e.target.value = ''; }} />
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className={labelCls}>Название *</label>
+            <input type="text" value={dish.name || ''} onChange={e => setDish(d => ({ ...d, name: e.target.value }))} className={inputCls} />
+          </div>
+          <div>
+            <label className={labelCls}>Цена ₽ *</label>
+            <input type="number" value={dish.price || ''} onChange={e => setDish(d => ({ ...d, price: e.target.value }))} className={inputCls} />
+          </div>
+
+          <div>
+            <label className={labelCls}>Категория *</label>
+            <SiteSelect
+              value={dish.category || ''}
+              onChange={v => setDish(d => ({ ...d, category: v }))}
+              options={categories}
+              placeholder="— выберите —"
+              allowCustom
+              customLabel="Новая категория"
+            />
+          </div>
+
+          <div>
+            <label className={labelCls}>Время (мин)</label>
+            <input type="number" value={dish.prep_time || ''} onChange={e => setDish(d => ({ ...d, prep_time: e.target.value }))} className={inputCls} />
+          </div>
+
+          <div>
+            <label className={labelCls}>Рейтинг</label>
+            <div className="h-[42px] flex items-center px-3 bg-black/50 border border-white/10 rounded-xl">
+              <StarRating value={Number(dish.rating) || 0} onChange={v => setDish(d => ({ ...d, rating: v }))} />
+            </div>
+          </div>
+
+          <div>
+            <label className={labelCls}>Тег</label>
+            <SiteSelect
+              value={dish.tag || ''}
+              onChange={v => setDish(d => ({ ...d, tag: v }))}
+              options={tags}
+              placeholder="Без тега"
+              allowCustom
+              customLabel="Новый тег"
+            />
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <label className={labelCls}>Описание</label>
+        <textarea value={dish.description || ''} rows={2}
+          onChange={e => setDish(d => ({ ...d, description: e.target.value }))}
+          className={inputCls + ' resize-none'} />
+      </div>
+
+      <div className="flex gap-3 mt-5">
+        <button onClick={onSave} className="flex items-center gap-2 px-5 py-2 bg-amber-500 hover:bg-amber-400 text-black rounded-xl font-bold text-sm transition-colors"><Save size={16} /> Сохранить</button>
+        <button onClick={onCancel} className="flex items-center gap-2 px-5 py-2 bg-white/5 hover:bg-white/10 text-gray-300 rounded-xl text-sm transition-colors"><X size={16} /> Отмена</button>
+      </div>
+    </motion.div>
+  );
+}
 
 export function AdminPage({ onLogout }) {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -33,10 +355,18 @@ export function AdminPage({ onLogout }) {
   const [reservations, setReservations] = useState([]);
   const [reviews, setReviews] = useState([]);
   const [messages, setMessages] = useState([]);
+  const [promos, setPromos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editingDish, setEditingDish] = useState(null);
   const [showAddDish, setShowAddDish] = useState(false);
   const [newDish, setNewDish] = useState({ name: '', price: '', category: '', image_url: '', rating: '4.5', prep_time: '20', description: '', tag: '' });
+  const [showAddPromo, setShowAddPromo] = useState(false);
+  const [newPromo, setNewPromo] = useState(emptyPromo);
+
+  const menuCategories = Array.from(new Set(menu.map(m => m.category).filter(Boolean))).sort();
+  const menuTags = Array.from(new Set([...DEFAULT_DISH_TAGS, ...menu.map(m => m.tag).filter(Boolean)])).sort();
+  const [confirmDialog, setConfirmDialog] = useState(null);
+  const askConfirm = (opts) => setConfirmDialog(opts);
 
   useEffect(() => {
     loadAll();
@@ -45,18 +375,20 @@ export function AdminPage({ onLogout }) {
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [m, o, r, rv, ms] = await Promise.all([
+      const [m, o, r, rv, ms, pr] = await Promise.all([
         adminFetch('/api/admin/menu').then(r => r.json()),
         adminFetch('/api/admin/orders').then(r => r.json()),
         adminFetch('/api/admin/reservations').then(r => r.json()),
         adminFetch('/api/admin/reviews').then(r => r.json()),
         adminFetch('/api/admin/messages').then(r => r.json()),
+        adminFetch('/api/admin/promos').then(r => r.json()),
       ]);
       setMenu(Array.isArray(m) ? m : []);
       setOrders(Array.isArray(o) ? o : []);
       setReservations(Array.isArray(r) ? r : []);
       setReviews(Array.isArray(rv) ? rv : []);
       setMessages(Array.isArray(ms) ? ms : []);
+      setPromos(Array.isArray(pr) ? pr : []);
     } catch (e) {
       toast.error('Ошибка загрузки данных');
     }
@@ -91,13 +423,19 @@ export function AdminPage({ onLogout }) {
     } catch { toast.error('Ошибка обновления'); }
   };
 
-  const handleDeleteDish = async (id) => {
-    if (!confirm('Удалить блюдо?')) return;
-    try {
-      await adminFetch(`/api/admin/menu/${id}`, { method: 'DELETE' });
-      setMenu(prev => prev.filter(d => d.id !== id));
-      toast.success('Блюдо удалено');
-    } catch { toast.error('Ошибка удаления'); }
+  const handleDeleteDish = (dish) => {
+    askConfirm({
+      title: 'Удалить блюдо?',
+      message: `«${dish.name}» исчезнет из меню. Действие нельзя отменить.`,
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        try {
+          await adminFetch(`/api/admin/menu/${dish.id}`, { method: 'DELETE' });
+          setMenu(prev => prev.filter(d => d.id !== dish.id));
+          toast.success('Блюдо удалено');
+        } catch { toast.error('Ошибка удаления'); }
+      },
+    });
   };
 
   const handleOrderStatus = async (id, status) => {
@@ -116,13 +454,70 @@ export function AdminPage({ onLogout }) {
     } catch { toast.error('Ошибка'); }
   };
 
-  const handleDeleteReview = async (id) => {
-    if (!confirm('Удалить отзыв?')) return;
+  const handleDeleteReview = (id) => {
+    askConfirm({
+      title: 'Удалить отзыв?',
+      message: 'Отзыв будет навсегда удалён.',
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        try {
+          await adminFetch(`/api/admin/reviews/${id}`, { method: 'DELETE' });
+          setReviews(prev => prev.filter(r => r.id !== id));
+          toast.success('Отзыв удалён');
+        } catch { toast.error('Ошибка'); }
+      },
+    });
+  };
+
+  const promoPayload = (p) => ({
+    code: p.code?.trim().toUpperCase(),
+    discount: Number(p.discount),
+    description: p.description || null,
+    is_active: !!p.is_active,
+    valid_from: p.valid_from || null,
+    valid_until: p.valid_until || null,
+    usage_limit: p.usage_limit === '' || p.usage_limit == null ? null : Number(p.usage_limit),
+  });
+
+  const handleAddPromo = async () => {
+    const payload = promoPayload(newPromo);
+    if (!payload.code) return toast.error('Введите код');
+    if (!payload.discount || payload.discount < 1 || payload.discount > 100) return toast.error('Скидка от 1 до 100');
     try {
-      await adminFetch(`/api/admin/reviews/${id}`, { method: 'DELETE' });
-      setReviews(prev => prev.filter(r => r.id !== id));
-      toast.success('Отзыв удалён');
+      const res = await adminFetch('/api/admin/promos', { method: 'POST', body: JSON.stringify(payload) });
+      const created = await res.json();
+      if (!res.ok) throw new Error(created.message || created.detail);
+      setPromos(prev => [created, ...prev]);
+      setNewPromo(emptyPromo);
+      setShowAddPromo(false);
+      toast.success('Промокод создан');
+    } catch (e) { toast.error(e.message || 'Ошибка создания'); }
+  };
+
+  const handleTogglePromo = async (promo) => {
+    try {
+      const res = await adminFetch(`/api/admin/promos/${promo.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ is_active: !promo.isActive }),
+      });
+      const updated = await res.json();
+      setPromos(prev => prev.map(p => p.id === updated.id ? updated : p));
     } catch { toast.error('Ошибка'); }
+  };
+
+  const handleDeletePromo = (promo) => {
+    askConfirm({
+      title: 'Удалить промокод?',
+      message: `Промокод «${promo.code}» больше не будет работать.`,
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        try {
+          await adminFetch(`/api/admin/promos/${promo.id}`, { method: 'DELETE' });
+          setPromos(prev => prev.filter(p => p.id !== promo.id));
+          toast.success('Промокод удалён');
+        } catch { toast.error('Ошибка удаления'); }
+      },
+    });
   };
 
   const handleExportCsv = async () => {
@@ -138,43 +533,6 @@ export function AdminPage({ onLogout }) {
     } catch { toast.error('Ошибка экспорта'); }
   };
 
-  const DishForm = ({ dish, setDish, onSave, onCancel, title }) => (
-    <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="glassmorphism-dark rounded-2xl p-6 border border-amber-500/30 mb-6">
-      <h3 className="text-lg font-bold text-amber-400 mb-4">{title}</h3>
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-        {[
-          { key: 'name', label: 'Название *', type: 'text' },
-          { key: 'price', label: 'Цена ₽ *', type: 'number' },
-          { key: 'category', label: 'Категория *', type: 'text' },
-          { key: 'image_url', label: 'URL изображения', type: 'text' },
-          { key: 'rating', label: 'Рейтинг', type: 'number' },
-          { key: 'prep_time', label: 'Время (мин)', type: 'number' },
-          { key: 'tag', label: 'Тег (хит/новинка)', type: 'text' },
-        ].map(f => (
-          <div key={f.key}>
-            <label className="text-xs text-gray-500 uppercase tracking-widest mb-1 block">{f.label}</label>
-            <input
-              type={f.type} value={dish[f.key] || ''}
-              onChange={e => setDish(d => ({ ...d, [f.key]: e.target.value }))}
-              className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-white text-sm focus:border-amber-500/50 outline-none"
-            />
-          </div>
-        ))}
-        <div className="col-span-2 md:col-span-3">
-          <label className="text-xs text-gray-500 uppercase tracking-widest mb-1 block">Описание</label>
-          <textarea
-            value={dish.description || ''} rows={2}
-            onChange={e => setDish(d => ({ ...d, description: e.target.value }))}
-            className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-white text-sm focus:border-amber-500/50 outline-none resize-none"
-          />
-        </div>
-      </div>
-      <div className="flex gap-3 mt-4">
-        <button onClick={onSave} className="flex items-center gap-2 px-5 py-2 bg-amber-500 hover:bg-amber-400 text-black rounded-xl font-bold text-sm transition-colors"><Save size={16} /> Сохранить</button>
-        <button onClick={onCancel} className="flex items-center gap-2 px-5 py-2 bg-white/5 hover:bg-white/10 text-gray-300 rounded-xl text-sm transition-colors"><X size={16} /> Отмена</button>
-      </div>
-    </motion.div>
-  );
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white flex">
@@ -263,14 +621,14 @@ export function AdminPage({ onLogout }) {
                   </div>
 
                   {showAddDish && (
-                    <DishForm dish={newDish} setDish={setNewDish} onSave={handleAddDish} onCancel={() => setShowAddDish(false)} title="Новое блюдо" />
+                    <DishForm dish={newDish} setDish={setNewDish} onSave={handleAddDish} onCancel={() => setShowAddDish(false)} title="Новое блюдо" categories={menuCategories} tags={menuTags} />
                   )}
 
                   <div className="grid gap-3">
                     {menu.map(dish => (
                       <div key={dish.id}>
                         {editingDish?.id === dish.id ? (
-                          <DishForm dish={editingDish} setDish={setEditingDish} onSave={handleUpdateDish} onCancel={() => setEditingDish(null)} title="Редактирование" />
+                          <DishForm dish={editingDish} setDish={setEditingDish} onSave={handleUpdateDish} onCancel={() => setEditingDish(null)} title="Редактирование" categories={menuCategories} tags={menuTags} />
                         ) : (
                           <motion.div layout className="flex items-center gap-4 glassmorphism-dark rounded-2xl p-4 border border-white/5 hover:border-amber-500/20 transition-colors">
                             {dish.image_url ? (
@@ -288,7 +646,7 @@ export function AdminPage({ onLogout }) {
                             <p className="text-xl font-black text-amber-400 whitespace-nowrap">{dish.price} ₽</p>
                             <div className="flex gap-2 shrink-0">
                               <button onClick={() => setEditingDish({ ...dish })} className="w-9 h-9 flex items-center justify-center rounded-xl bg-white/5 hover:bg-amber-500/20 hover:text-amber-400 transition-colors"><Edit3 size={16} /></button>
-                              <button onClick={() => handleDeleteDish(dish.id)} className="w-9 h-9 flex items-center justify-center rounded-xl bg-white/5 hover:bg-red-500/20 hover:text-red-400 transition-colors"><Trash2 size={16} /></button>
+                              <button onClick={() => handleDeleteDish(dish)} className="w-9 h-9 flex items-center justify-center rounded-xl bg-white/5 hover:bg-red-500/20 hover:text-red-400 transition-colors"><Trash2 size={16} /></button>
                             </div>
                           </motion.div>
                         )}
@@ -424,10 +782,131 @@ export function AdminPage({ onLogout }) {
                 </div>
               )}
 
+              {/* PROMOS */}
+              {activeTab === 'promos' && (
+                <div>
+                  <div className="flex items-center justify-between mb-6">
+                    <h1 className="text-3xl font-black">Промокоды <span className="text-gray-600 text-lg font-normal">({promos.length})</span></h1>
+                    <button onClick={() => setShowAddPromo(v => !v)} className="flex items-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black rounded-xl font-bold text-sm transition-colors">
+                      <Plus size={16} /> Новый промокод
+                    </button>
+                  </div>
+
+                  {showAddPromo && (
+                    <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="glassmorphism-dark rounded-2xl p-6 border border-amber-500/30 mb-6">
+                      <h3 className="text-lg font-bold text-amber-400 mb-4">Создать промокод</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                          <label className="text-xs text-gray-500 uppercase tracking-widest mb-1 block">Код *</label>
+                          <input value={newPromo.code} onChange={e => setNewPromo(p => ({ ...p, code: e.target.value.toUpperCase() }))} placeholder="SUMMER25" className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-white text-sm focus:border-amber-500/50 outline-none uppercase" />
+                        </div>
+                        <div>
+                          <label className="text-xs text-gray-500 uppercase tracking-widest mb-1 block">Скидка % *</label>
+                          <input type="number" min="1" max="100" value={newPromo.discount} onChange={e => setNewPromo(p => ({ ...p, discount: e.target.value }))} className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-white text-sm focus:border-amber-500/50 outline-none" />
+                        </div>
+                        <div>
+                          <label className="text-xs text-gray-500 uppercase tracking-widest mb-1 block">Лимит использований</label>
+                          <input type="number" min="1" placeholder="без лимита" value={newPromo.usage_limit} onChange={e => setNewPromo(p => ({ ...p, usage_limit: e.target.value }))} className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-white text-sm focus:border-amber-500/50 outline-none" />
+                        </div>
+                        <div>
+                          <label className="text-xs text-gray-500 uppercase tracking-widest mb-1 block">Действует с</label>
+                          <PromoDatePicker
+                            value={newPromo.valid_from}
+                            onChange={(v) => {
+                              if (!v) return setNewPromo(p => ({ ...p, valid_from: '' }));
+                              const d = new Date(v); d.setHours(0, 0, 0, 0);
+                              setNewPromo(p => ({ ...p, valid_from: d.toISOString() }));
+                            }}
+                            placeholder="С сегодняшнего дня"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs text-gray-500 uppercase tracking-widest mb-1 block">Действует до</label>
+                          <PromoDatePicker
+                            value={newPromo.valid_until}
+                            onChange={(v) => {
+                              if (!v) return setNewPromo(p => ({ ...p, valid_until: '' }));
+                              const d = new Date(v); d.setHours(23, 59, 59, 999);
+                              setNewPromo(p => ({ ...p, valid_until: d.toISOString() }));
+                            }}
+                            placeholder="Без срока"
+                            disabled={(d) => d < new Date(new Date().setHours(0,0,0,0))}
+                          />
+                        </div>
+                        <div className="flex items-end">
+                          <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-300">
+                            <input type="checkbox" checked={newPromo.is_active} onChange={e => setNewPromo(p => ({ ...p, is_active: e.target.checked }))} className="w-4 h-4 accent-amber-500" />
+                            Активен
+                          </label>
+                        </div>
+                        <div className="col-span-1 md:col-span-3">
+                          <label className="text-xs text-gray-500 uppercase tracking-widest mb-1 block">Описание</label>
+                          <input value={newPromo.description} onChange={e => setNewPromo(p => ({ ...p, description: e.target.value }))} placeholder="Летняя акция" className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-white text-sm focus:border-amber-500/50 outline-none" />
+                        </div>
+                      </div>
+                      <div className="flex gap-3 mt-4">
+                        <button onClick={handleAddPromo} className="flex items-center gap-2 px-5 py-2 bg-amber-500 hover:bg-amber-400 text-black rounded-xl font-bold text-sm transition-colors"><Save size={16} /> Создать</button>
+                        <button onClick={() => { setShowAddPromo(false); setNewPromo(emptyPromo); }} className="flex items-center gap-2 px-5 py-2 bg-white/5 hover:bg-white/10 text-gray-300 rounded-xl text-sm transition-colors"><X size={16} /> Отмена</button>
+                      </div>
+                    </motion.div>
+                  )}
+
+                  <div className="grid gap-3">
+                    {promos.length === 0 ? <p className="text-gray-500">Пока нет промокодов</p> : promos.map(promo => {
+                      const validFrom = promo.validFrom ? new Date(promo.validFrom) : null;
+                      const validUntil = promo.validUntil ? new Date(promo.validUntil) : null;
+                      const now = new Date();
+                      const expired = validUntil && now > validUntil;
+                      const notYet = validFrom && now < validFrom;
+                      const statusBadge = !promo.isActive ? { text: 'Отключён', color: 'text-gray-500 bg-gray-500/10' }
+                        : expired ? { text: 'Истёк', color: 'text-red-400 bg-red-500/10' }
+                        : notYet ? { text: 'Ждёт активации', color: 'text-blue-400 bg-blue-500/10' }
+                        : { text: 'Активен', color: 'text-green-400 bg-green-500/10' };
+                      return (
+                        <motion.div key={promo.id} layout className="flex items-center gap-4 glassmorphism-dark rounded-2xl p-4 border border-white/5 hover:border-amber-500/20 transition-colors">
+                          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-500/20 to-orange-600/20 flex items-center justify-center shrink-0">
+                            <Ticket size={26} className="text-amber-400" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="font-black text-white text-lg tracking-wider">{promo.code}</p>
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider ${statusBadge.color}`}>{statusBadge.text}</span>
+                            </div>
+                            {promo.description && <p className="text-gray-400 text-sm mt-0.5">{promo.description}</p>}
+                            <p className="text-gray-600 text-xs mt-1">
+                              {validFrom && <>с {validFrom.toLocaleDateString('ru-RU')} </>}
+                              {validUntil && <>до {validUntil.toLocaleDateString('ru-RU')} </>}
+                              {!validFrom && !validUntil && 'без срока'}
+                              {promo.usageLimit != null && <> · лимит {promo.usageLimit}</>}
+                            </p>
+                          </div>
+                          <p className="text-3xl font-black text-amber-400 whitespace-nowrap">−{promo.discount}%</p>
+                          <div className="flex gap-2 shrink-0">
+                            <button onClick={() => handleTogglePromo(promo)} title={promo.isActive ? 'Отключить' : 'Включить'} className={`w-9 h-9 flex items-center justify-center rounded-xl transition-colors ${promo.isActive ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30' : 'bg-white/5 text-gray-500 hover:bg-white/10'}`}>
+                              <Power size={16} />
+                            </button>
+                            <button onClick={() => handleDeletePromo(promo)} className="w-9 h-9 flex items-center justify-center rounded-xl bg-white/5 hover:bg-red-500/20 hover:text-red-400 transition-colors"><Trash2 size={16} /></button>
+                          </div>
+                        </motion.div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
             </motion.div>
           </AnimatePresence>
         )}
       </main>
+
+      <ConfirmDialog
+        open={!!confirmDialog}
+        title={confirmDialog?.title}
+        message={confirmDialog?.message}
+        confirmLabel={confirmDialog?.confirmLabel}
+        onConfirm={confirmDialog?.onConfirm}
+        onCancel={() => setConfirmDialog(null)}
+      />
     </div>
   );
 }

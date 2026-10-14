@@ -5,12 +5,17 @@ import {
   HttpCode,
   HttpStatus,
   Inject,
+  Patch,
   Post,
+  Req,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { IsEmail, IsNotEmpty, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import { PrismaService } from '../../prisma/prisma.service';
 import bcrypt from 'bcryptjs';
 import nodemailer from 'nodemailer';
+import { signToken } from '../../common/jwt.utils.js';
+import { Public } from '../../common/public.decorator.js';
 
 class RegisterDto {
   @IsString({ message: 'Имя должно быть строкой' })
@@ -26,11 +31,8 @@ class RegisterDto {
 
   @IsString({ message: 'Пароль должен быть строкой' })
   @MinLength(6, { message: 'Пароль должен содержать минимум 6 символов' })
+  @MaxLength(100, { message: 'Пароль не может быть длиннее 100 символов' })
   password;
-
-  @IsOptional()
-  @IsString()
-  role;
 }
 
 class LoginDto {
@@ -38,6 +40,7 @@ class LoginDto {
   email;
 
   @IsString({ message: 'Введите пароль' })
+  @MaxLength(100, { message: 'Пароль не может быть длиннее 100 символов' })
   password;
 }
 
@@ -65,9 +68,12 @@ export class AuthController {
     this.prisma = prisma;
   }
 
+  @Public()
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('register')
   async register(@Body() body) {
-    const existing = await this.prisma.user.findFirst({ where: { email: body.email } });
+    const emailNorm = String(body.email ?? '').trim().toLowerCase();
+    const existing = await this.prisma.user.findFirst({ where: { email: emailNorm } });
     if (existing) throw new BadRequestException('Email уже зарегистрирован');
 
     const passwordHash = await bcrypt.hash(body.password, 10);
@@ -75,64 +81,86 @@ export class AuthController {
     const user = await this.prisma.user.create({
       data: {
         name: body.name,
-        email: body.email,
+        email: emailNorm,
         phone: body.phone,
         passwordHash,
-        role: body.role ?? 'user',
+        role: 'user',
       },
     });
 
-    return this.toUserResponse(user);
+    return { user: this.toUserResponse(user), token: signToken({ sub: user.id }) };
   }
 
+  @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('login')
   async login(@Body() body) {
-    const user = await this.prisma.user.findFirst({ where: { email: body.email } });
+    const emailNorm = String(body.email ?? '').trim().toLowerCase();
+    const user = await this.prisma.user.findFirst({ where: { email: emailNorm } });
     if (!user) throw new BadRequestException('Неверный email или пароль');
 
     const ok = await bcrypt.compare(body.password, user.passwordHash);
     if (!ok) throw new BadRequestException('Неверный email или пароль');
 
-    return this.toUserResponse(user);
+    return { user: this.toUserResponse(user), token: signToken({ sub: user.id }) };
   }
 
+  @Public()
+  @Throttle({ default: { limit: 3, ttl: 60_000 } })
   @Post('forgot-password')
   async forgotPassword(@Body() body) {
+    const emailNorm = String(body.email ?? '').trim().toLowerCase();
     const code = String(Math.floor(100000 + Math.random() * 900000));
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
 
-    const user = await this.prisma.user.findFirst({ where: { email: body.email } });
+    const user = await this.prisma.user.findFirst({ where: { email: emailNorm } });
 
     if (!user) return { message: 'If the email exists, a reset code has been sent.' };
 
+    const tokenHash = await bcrypt.hash(code, 10);
+
     await this.prisma.passwordResetToken.create({
       data: {
-        email: body.email,
-        token: code,
+        email: emailNorm,
+        tokenHash,
         expiresAt,
       },
     });
 
-    const sendOk = await this.sendResetEmail(body.email, code);
-    if (!sendOk) throw new BadRequestException('Ошибка отправки письма');
+    this.sendResetEmail(emailNorm, code).catch((e) =>
+      console.error('[MAILER] reset email background error:', e?.message),
+    );
 
     return { message: 'Код восстановления отправлен на вашу почту' };
   }
 
+  @Public()
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('reset-password')
   async resetPassword(@Body() body) {
-    const tokenRow = await this.prisma.passwordResetToken.findFirst({
+    const emailNorm = String(body.email ?? '').trim().toLowerCase();
+
+    const candidates = await this.prisma.passwordResetToken.findMany({
       where: {
-        email: body.email,
-        token: body.code,
-        used: 0,
+        email: emailNorm,
+        used: false,
         expiresAt: { gt: new Date() },
       },
+      orderBy: { createdAt: 'desc' },
+      take: 5,
     });
+
+    let tokenRow = null;
+    for (const t of candidates) {
+      if (t.tokenHash && (await bcrypt.compare(body.code, t.tokenHash))) {
+        tokenRow = t;
+        break;
+      }
+    }
 
     if (!tokenRow) throw new BadRequestException('Неверный или просроченный код');
 
-    const user = await this.prisma.user.findFirst({ where: { email: body.email } });
+    const user = await this.prisma.user.findFirst({ where: { email: emailNorm } });
     if (!user) throw new BadRequestException('Пользователь не найден');
 
     const nextPasswordHash = await bcrypt.hash(body.new_password, 10);
@@ -144,11 +172,24 @@ export class AuthController {
       }),
       this.prisma.passwordResetToken.update({
         where: { id: tokenRow.id },
-        data: { used: 1 },
+        data: { used: true },
       }),
     ]);
 
     return { message: 'Пароль успешно изменен' };
+  }
+
+  @Patch('profile')
+  async updateProfile(@Body() body, @Req() req) {
+    const userId = req.user?.sub;
+    if (!userId) throw new BadRequestException('Необходима авторизация');
+
+    const data = {};
+    if (body.name !== undefined) data.name = String(body.name).trim().slice(0, 100);
+    if (body.phone !== undefined) data.phone = String(body.phone).trim().slice(0, 30);
+
+    const updated = await this.prisma.user.update({ where: { id: userId }, data });
+    return this.toUserResponse(updated);
   }
 
   toUserResponse(user) {
@@ -168,9 +209,12 @@ export class AuthController {
 
     const transporter = nodemailer.createTransport({
       host: 'smtp.gmail.com',
-      port: 587,
-      secure: false,
+      port: 465,
+      secure: true,
       auth: { user: gmailAddress, pass: gmailAppPassword },
+      connectionTimeout: 15000,
+      greetingTimeout: 15000,
+      socketTimeout: 20000,
     });
 
     const html = `<!DOCTYPE html>
@@ -224,14 +268,16 @@ export class AuthController {
 </html>`;
 
     try {
-      await transporter.sendMail({
+      const info = await transporter.sendMail({
         from: `Look Restaurant <${gmailAddress}>`,
         to,
         subject: 'Восстановление пароля — Look Restaurant',
         html,
       });
+      console.log('[MAILER] reset email sent to', to, '- messageId:', info?.messageId);
       return true;
     } catch (e) {
+      console.error('[MAILER] reset email failed for', to, '-', e?.message);
       return false;
     }
   }

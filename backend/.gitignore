@@ -1,7 +1,19 @@
+# Dependencies
 node_modules/
+
+# Build
 dist/
+
+# Environment
 .env
-*.db
-look_api/
-__pycache__/
-*.pyc
+
+# Database — dev.db коммитится; игнорируем только WAL/temp файлы
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Prisma generated artifacts (kept for reference if needed)
+# prisma/migrations/
+
+# Logs
+*.log

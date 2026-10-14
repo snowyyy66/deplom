@@ -1,5 +1,8 @@
-import { Injectable, Inject } from '@nestjs/common';
+import { BadRequestException, Injectable, Inject } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+
+const ORDER_STATUSES = ['new', 'preparing', 'delivering', 'completed', 'cancelled'];
+const RESERVATION_STATUSES = ['pending', 'confirmed', 'cancelled'];
 
 @Injectable()
 export class AdminService {
@@ -105,6 +108,7 @@ export class AdminService {
   }
 
   async updateOrderStatus(id, status) {
+    if (!ORDER_STATUSES.includes(status)) throw new BadRequestException(`Недопустимый статус: ${status}`);
     return this.prisma.order.update({ where: { id }, data: { status } });
   }
 
@@ -113,6 +117,7 @@ export class AdminService {
   }
 
   async updateReservationStatus(id, status) {
+    if (!RESERVATION_STATUSES.includes(status)) throw new BadRequestException(`Недопустимый статус: ${status}`);
     return this.prisma.reservation.update({ where: { id }, data: { status } });
   }
 
@@ -127,5 +132,52 @@ export class AdminService {
 
   async getAllMessages() {
     return this.prisma.contactMessage.findMany({ orderBy: { id: 'desc' } });
+  }
+
+  async getAllPromoCodes() {
+    return this.prisma.promoCode.findMany({ orderBy: { id: 'desc' } });
+  }
+
+  async createPromoCode(body) {
+    const code = String(body.code ?? '').trim().toUpperCase();
+    if (!code) throw new BadRequestException('Введите код промокода');
+    if (!Number.isInteger(body.discount) || body.discount < 1 || body.discount > 100) {
+      throw new BadRequestException('Скидка должна быть от 1 до 100');
+    }
+    const exists = await this.prisma.promoCode.findUnique({ where: { code } });
+    if (exists) throw new BadRequestException('Такой промокод уже существует');
+
+    return this.prisma.promoCode.create({
+      data: {
+        code,
+        discount: body.discount,
+        description: body.description?.trim() || null,
+        isActive: body.is_active !== false,
+        validFrom: body.valid_from ? new Date(body.valid_from) : null,
+        validUntil: body.valid_until ? new Date(body.valid_until) : null,
+        usageLimit: body.usage_limit ?? null,
+      },
+    });
+  }
+
+  async updatePromoCode(id, body) {
+    const data = {};
+    if (body.discount !== undefined) {
+      if (!Number.isInteger(body.discount) || body.discount < 1 || body.discount > 100) {
+        throw new BadRequestException('Скидка должна быть от 1 до 100');
+      }
+      data.discount = body.discount;
+    }
+    if (body.description !== undefined) data.description = body.description?.trim() || null;
+    if (body.is_active !== undefined) data.isActive = !!body.is_active;
+    if (body.valid_from !== undefined) data.validFrom = body.valid_from ? new Date(body.valid_from) : null;
+    if (body.valid_until !== undefined) data.validUntil = body.valid_until ? new Date(body.valid_until) : null;
+    if (body.usage_limit !== undefined) data.usageLimit = body.usage_limit;
+    return this.prisma.promoCode.update({ where: { id }, data });
+  }
+
+  async deletePromoCode(id) {
+    await this.prisma.promoCode.delete({ where: { id } });
+    return { success: true };
   }
 }

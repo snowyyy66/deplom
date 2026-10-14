@@ -26,6 +26,12 @@ const MENU_ITEMS = [
   { name: 'Панна-котта', price: 490, category: 'Десерты', imageUrl: '/dish-pannacotta.jpg', rating: 4.6, prepTime: 5, description: 'С соусом из спелых ягод', tag: null },
 ];
 
+const PROMO_CODES = [
+  { code: 'LOOK20', discount: 20, description: 'Скидка 20% на первый заказ', isActive: true },
+  { code: 'LOOK15', discount: 15, description: 'Скидка 15% за пасхалку', isActive: true },
+  { code: 'LOOKRUN', discount: 10, description: 'Скидка 10% за победу в мини-игре «Спринт шефа»', isActive: true },
+];
+
 async function main() {
   const count = await prisma.menuItem.count();
   if (count === 0) {
@@ -34,6 +40,15 @@ async function main() {
   } else {
     console.log(`Меню уже заполнено (${count} позиций), пропускаем.`);
   }
+
+  for (const promo of PROMO_CODES) {
+    await prisma.promoCode.upsert({
+      where: { code: promo.code },
+      update: {},
+      create: promo,
+    });
+  }
+  console.log(`Промокоды засеяны (${PROMO_CODES.length}).`);
 }
 
 main()

@@ -1,19 +1,24 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Lock, ArrowRight } from 'lucide-react';
-
-const ADMIN_PASSWORD = 'look-admin-2024';
+import { api } from '../lib/api';
 
 export function AdminLoginPage({ onLogin }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (password === ADMIN_PASSWORD) {
+    setLoading(true);
+    setError('');
+    try {
+      await api.adminLogin(password);
       onLogin();
-    } else {
+    } catch {
       setError('Неверный пароль');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -51,14 +56,16 @@ export function AdminLoginPage({ onLogin }) {
                   placeholder="••••••••••••"
                   className="w-full bg-black/50 border border-white/10 h-14 rounded-xl pl-10 pr-4 text-white focus:border-amber-500/50 outline-none transition-colors tracking-widest"
                   autoFocus
+                  disabled={loading}
                 />
               </div>
             </div>
             <button
               type="submit"
-              className="w-full h-14 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-black font-bold rounded-xl flex items-center justify-center gap-2 transition-all"
+              disabled={loading}
+              className="w-full h-14 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-black font-bold rounded-xl flex items-center justify-center gap-2 transition-all disabled:opacity-60"
             >
-              Войти <ArrowRight size={18} />
+              {loading ? 'Проверка...' : <><span>Войти</span><ArrowRight size={18} /></>}
             </button>
           </form>
         </div>

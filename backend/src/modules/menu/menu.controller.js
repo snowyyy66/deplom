@@ -1,5 +1,6 @@
 import { Controller, Get, Body, Post, Inject } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { Public } from '../../common/public.decorator.js';
 
 @Controller('api/menu')
 export class MenuController {
@@ -7,6 +8,7 @@ export class MenuController {
     this.prisma = prisma;
   }
 
+  @Public()
   @Get()
   async getMenu() {
     const items = await this.prisma.menuItem.findMany({ orderBy: { id: 'asc' } });
